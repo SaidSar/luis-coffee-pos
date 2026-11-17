@@ -9,6 +9,7 @@ const pageTitles: Record<string, string> = {
   '/inventory':  'Inventario',
   '/employees':  'Empleados',
   '/deliveries': 'Entregas',
+  '/expenses':   'Gastos',
   '/reports':    'Reportes',
 };
 

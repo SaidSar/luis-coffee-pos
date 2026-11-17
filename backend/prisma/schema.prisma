@@ -160,8 +160,9 @@ model Expense {
   userId      String
   description String
   amount      Decimal  @db.Decimal(10, 2)
-  category    String
-  expenseDate DateTime @default(now())
+  category    String   // una de EXPENSE_CATEGORIES (validada en la API)
+  expenseDate DateTime @default(now()) // mediodía hora de Mazatlán del día del gasto
+  notes       String?
 
   user User @relation(fields: [userId], references: [id])
 }

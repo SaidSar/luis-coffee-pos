@@ -11,6 +11,7 @@ import productRoutes  from './routes/products.routes';
 import orderRoutes    from './routes/orders.routes';
 import tableRoutes    from './routes/tables.routes';
 import reportRoutes   from './routes/reports.routes';
+import expenseRoutes  from './routes/expenses.routes';
 
 const app = express();
 const httpServer = createServer(app);
@@ -31,7 +32,7 @@ app.use('/api/tables',     tableRoutes);
 // app.use('/api/payments',   paymentRoutes);
 // app.use('/api/deliveries', deliveryRoutes);
 // app.use('/api/employees',  employeeRoutes);
-// app.use('/api/expenses',   expenseRoutes);
+app.use('/api/expenses',   expenseRoutes);
 app.use('/api/reports',    reportRoutes);
 
 app.get('/health', (_, res) =>

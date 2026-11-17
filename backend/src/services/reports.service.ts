@@ -14,10 +14,10 @@ export type GroupBy = 'day' | 'week' | 'month';
 
 export interface ReportRange { from: string; to: string } // YYYY-MM-DD (zona America/Mazatlan)
 
-const local = (col: Prisma.Sql) => Prisma.sql`((${col} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Mazatlan')`;
-const startUtc = (d: string) => Prisma.sql`(((${d}::date)::timestamp AT TIME ZONE 'America/Mazatlan') AT TIME ZONE 'UTC')`;
-const endUtcExcl = (d: string) => Prisma.sql`((((${d}::date) + 1)::timestamp AT TIME ZONE 'America/Mazatlan') AT TIME ZONE 'UTC')`;
-const inRange = (col: Prisma.Sql, r: ReportRange) => Prisma.sql`${col} >= ${startUtc(r.from)} AND ${col} < ${endUtcExcl(r.to)}`;
+export const local = (col: Prisma.Sql) => Prisma.sql`((${col} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Mazatlan')`;
+export const startUtc = (d: string) => Prisma.sql`(((${d}::date)::timestamp AT TIME ZONE 'America/Mazatlan') AT TIME ZONE 'UTC')`;
+export const endUtcExcl = (d: string) => Prisma.sql`((((${d}::date) + 1)::timestamp AT TIME ZONE 'America/Mazatlan') AT TIME ZONE 'UTC')`;
+export const inRange = (col: Prisma.Sql, r: ReportRange) => Prisma.sql`${col} >= ${startUtc(r.from)} AND ${col} < ${endUtcExcl(r.to)}`;
 
 // Órdenes pagadas en el rango (base de todas las ventas)
 const paidOrders = (r: ReportRange) => Prisma.sql`

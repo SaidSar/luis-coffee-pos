@@ -7,12 +7,14 @@ interface Props {
   preset:   PresetId | 'custom';
   onPreset: (id: PresetId) => void;
   onCustom: (range: DateRange) => void;
+  label?:   string; // nombre accesible del grupo de atajos (Reportes, Gastos…)
+  idPrefix?: string; // ids únicos de los inputs si hay más de un selector
 }
 
 const MAX_DAYS = 366;
 const input = `w-full min-h-11 px-3 rounded-xl border border-espresso/50 bg-white text-espresso text-sm focus:outline-none focus:ring-2 focus:ring-caramel-dark`;
 
-export default function PeriodSelector({ value, preset, onPreset, onCustom }: Props) {
+export default function PeriodSelector({ value, preset, onPreset, onCustom, label = 'Periodo del reporte', idPrefix = 'report' }: Props) {
   const [from, setFrom] = useState(value.from);
   const [to,   setTo]   = useState(value.to);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +30,7 @@ export default function PeriodSelector({ value, preset, onPreset, onCustom }: Pr
 
   return (
     <div className="flex flex-col gap-3">
-      <div role="group" aria-label="Periodo del reporte" className="flex flex-wrap gap-2">
+      <div role="group" aria-label={label} className="flex flex-wrap gap-2">
         {PRESETS.map((p) => (
           <button
             key={p.id}
@@ -46,13 +48,13 @@ export default function PeriodSelector({ value, preset, onPreset, onCustom }: Pr
       {/* noValidate: la validación propia muestra el error con role="alert" (min/max solo guían al selector) */}
       <form onSubmit={applyCustom} noValidate className="flex flex-wrap items-end gap-2" aria-label="Rango personalizado">
         <div className="flex-1 min-w-36">
-          <label htmlFor="report-from" className="block text-sm font-medium text-espresso mb-1">Desde</label>
-          <input id="report-from" type="date" value={from} max={to || undefined}
+          <label htmlFor={`${idPrefix}-from`} className="block text-sm font-medium text-espresso mb-1">Desde</label>
+          <input id={`${idPrefix}-from`} type="date" value={from} max={to || undefined}
             onChange={(e) => setFrom(e.target.value)} className={input} />
         </div>
         <div className="flex-1 min-w-36">
-          <label htmlFor="report-to" className="block text-sm font-medium text-espresso mb-1">Hasta</label>
-          <input id="report-to" type="date" value={to} min={from || undefined}
+          <label htmlFor={`${idPrefix}-to`} className="block text-sm font-medium text-espresso mb-1">Hasta</label>
+          <input id={`${idPrefix}-to`} type="date" value={to} min={from || undefined}
             onChange={(e) => setTo(e.target.value)} className={input} />
         </div>
         <button
