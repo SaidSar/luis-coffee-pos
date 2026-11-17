@@ -29,6 +29,10 @@ interface Props {
   onClose: () => void;
 }
 
+// Foco visible sobre el fondo espresso: contorno cream (14.4:1 contra espresso).
+// Con offset de 2 px queda sobre el fondo del Sidebar, también alrededor del ítem activo caramel.
+const focusOnDark = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cream';
+
 export default function Sidebar({ isOpen, onClose }: Props) {
   const user   = useAuthStore(s => s.user);
   const logout = useLogout();
@@ -60,7 +64,7 @@ export default function Sidebar({ isOpen, onClose }: Props) {
         <button
           onClick={onClose}
           aria-label="Cerrar menú"
-          className="lg:hidden text-white/60 hover:text-white transition-colors p-1"
+          className={`lg:hidden text-white/60 hover:text-white transition-colors p-1 rounded-lg ${focusOnDark}`}
         >
           <X size={18} />
         </button>
@@ -75,7 +79,7 @@ export default function Sidebar({ isOpen, onClose }: Props) {
             onClick={onClose}
             className={({ isActive }) => `
               flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
-              transition-colors
+              transition-colors ${focusOnDark}
               ${isActive
                 ? 'bg-caramel text-espresso'
                 : 'text-white/60 hover:text-white hover:bg-white/10'
@@ -103,11 +107,11 @@ export default function Sidebar({ isOpen, onClose }: Props) {
         </div>
         <button
           onClick={logout}
-          className="
+          className={`
             w-full flex items-center gap-2 px-3 py-2
             text-white/60 hover:text-white/90 hover:bg-white/10
-            rounded-lg text-xs font-medium transition-colors
-          "
+            rounded-lg text-xs font-medium transition-colors ${focusOnDark}
+          `}
         >
           <LogOut size={14} />
           Cerrar sesión

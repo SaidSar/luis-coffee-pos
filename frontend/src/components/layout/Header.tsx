@@ -38,7 +38,7 @@ export default function Header({ onMenuClick }: Props) {
         <button
           onClick={onMenuClick}
           aria-label="Abrir menú"
-          className="lg:hidden text-espresso/70 hover:text-espresso transition-colors"
+          className="lg:hidden text-espresso/70 hover:text-espresso transition-colors rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-caramel-dark"
         >
           <Menu size={22} />
         </button>
