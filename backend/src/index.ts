@@ -2,19 +2,20 @@ import 'dotenv/config'; // primero: carga .env antes de que otros módulos lean 
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { Server } from 'socket.io';
+import { initSocket } from './services/socket.service';
 
 // Rutas
 import authRoutes from './routes/auth.routes';
 import categoryRoutes from './routes/categories.routes';
 import productRoutes  from './routes/products.routes';
+import orderRoutes    from './routes/orders.routes';
+import tableRoutes    from './routes/tables.routes';
 
 const app = express();
 const httpServer = createServer(app);
 
-export const io = new Server(httpServer, {
-  cors: { origin: process.env.FRONTEND_URL || 'http://localhost:5173' },
-});
+// Socket.io con autenticación JWT en el handshake (ver services/socket.service.ts)
+export const io = initSocket(httpServer);
 
 app.use(cors({ origin: process.env.FRONTEND_URL }));
 app.use(express.json());
@@ -23,8 +24,8 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products',   productRoutes);
-// app.use('/api/orders',     orderRoutes);
-// app.use('/api/tables',     tableRoutes);
+app.use('/api/orders',     orderRoutes);
+app.use('/api/tables',     tableRoutes);
 // app.use('/api/payments',   paymentRoutes);
 // app.use('/api/deliveries', deliveryRoutes);
 // app.use('/api/employees',  employeeRoutes);
@@ -34,11 +35,6 @@ app.use('/api/products',   productRoutes);
 app.get('/health', (_, res) =>
   res.json({ status: 'ok', app: 'Luis Coffee Break POS ☕' })
 );
-
-io.on('connection', (socket) => {
-  console.log('🔌 Cliente conectado:', socket.id);
-  socket.on('disconnect', () => console.log('❌ Desconectado:', socket.id));
-});
 
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {

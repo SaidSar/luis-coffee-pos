@@ -97,11 +97,13 @@ model Product {
 }
 
 model Order {
-  id        String      @id @default(uuid())
-  tableId   String?
-  userId    String
-  type      OrderType   @default(DINE_IN)
-  status    OrderStatus @default(OPEN)
+  id           String      @id @default(uuid())
+  ticketNumber Int         @unique @default(autoincrement())
+  customerName String?
+  tableId      String?
+  userId       String
+  type         OrderType   @default(DINE_IN)
+  status       OrderStatus @default(OPEN)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
