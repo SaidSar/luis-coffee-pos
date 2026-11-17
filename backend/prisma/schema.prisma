@@ -1,10 +1,13 @@
 generator client {
   provider = "prisma-client-js"
+  // Carga los include con un solo query (JOIN LATERAL) en vez de uno por relación
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL") // pooler (pgbouncer, puerto 6543): la app
+  directUrl = env("DIRECT_URL")   // conexión de sesión (puerto 5432): db push y migraciones
 }
 
 // ─── Enums ─────────────────────────────────────────────────────
@@ -88,6 +91,7 @@ model Product {
   price       Decimal  @db.Decimal(10, 2)
   cost        Decimal  @db.Decimal(10, 2)
   stock       Int      @default(0)
+  trackStock  Boolean  @default(false) // si es false, el stock no se valida ni se descuenta
   imageUrl    String?
   isAvailable Boolean  @default(true)
   categoryId  String
@@ -97,11 +101,13 @@ model Product {
 }
 
 model Order {
-  id        String      @id @default(uuid())
-  tableId   String?
-  userId    String
-  type      OrderType   @default(DINE_IN)
-  status    OrderStatus @default(OPEN)
+  id           String      @id @default(uuid())
+  ticketNumber Int         @unique @default(autoincrement())
+  customerName String?
+  tableId      String?
+  userId       String
+  type         OrderType   @default(DINE_IN)
+  status       OrderStatus @default(OPEN)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -117,8 +123,9 @@ model OrderItem {
   orderId   String
   productId String
   quantity  Int
-  unitPrice Decimal @db.Decimal(10, 2)
+  unitPrice Decimal  @db.Decimal(10, 2)
   notes     String?
+  createdAt DateTime @default(now()) // orden cronológico de las rondas
 
   order   Order   @relation(fields: [orderId], references: [id])
   product Product @relation(fields: [productId], references: [id])

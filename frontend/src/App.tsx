@@ -5,6 +5,7 @@ import MainLayout     from './components/layout/MainLayout';
 import Login          from './pages/Login';
 import Dashboard      from './pages/Dashboard';
 import Inventory from './pages/Inventory';
+import POS            from './pages/POS';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,7 +40,7 @@ export default function App() {
 
           {/* Protegidas con layout */}
           <Route path="/dashboard"  element={<ProtectedPage><Dashboard /></ProtectedPage>} />
-          <Route path="/pos"        element={<ProtectedPage><Soon name="Punto de Venta"  /></ProtectedPage>} />
+          <Route path="/pos"        element={<ProtectedPage><POS /></ProtectedPage>} />
           <Route path="/inventory"  element={<ProtectedPage><Inventory /></ProtectedPage>} />
           <Route path="/employees"  element={<ProtectedPage><Soon name="Empleados"       /></ProtectedPage>} />
           <Route path="/deliveries" element={<ProtectedPage><Soon name="Entregas"        /></ProtectedPage>} />

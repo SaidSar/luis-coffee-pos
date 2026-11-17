@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Sidebar from './Sidebar';
 import Header  from './Header';
+import { useRealtime } from '../../hooks/useRealtime';
 
 interface Props {
   children: React.ReactNode;
@@ -8,6 +9,9 @@ interface Props {
 
 export default function MainLayout({ children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Tiempo real (Socket.io): una sola vez para todas las páginas protegidas
+  useRealtime();
 
   return (
     <div className="flex h-screen bg-cream font-sans overflow-hidden">
