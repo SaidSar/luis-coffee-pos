@@ -7,6 +7,7 @@ import {
   TX_OPTS, orderInclude, toOrderView, orderTotal,
   createOrderSchema, addItemsSchema, updateItemSchema, statusSchema, paymentSchema, listQuerySchema,
   resolveItems, occupyTable, lockOrder, freeTableIfIdle, assertActive, assertStock, trackedProducts, decrementStock,
+  deliveryEvent,
 } from './orders.helpers';
 
 // Transiciones permitidas. CANCELLED además exige que no exista Payment y rol ADMIN o CASHIER.
@@ -84,6 +85,15 @@ export const createOrder = async (req: Request, res: Response) => {
           customerName: body.customerName ?? null,
           userId,
           items:        { createMany: { data: items } },
+          // A domicilio: datos de entrega en la misma escritura (sin mesa)
+          ...(body.type === 'DELIVERY' && body.delivery
+            ? { delivery: { create: {
+                phone:       body.delivery.phone,
+                address:     body.delivery.address,
+                reference:   body.delivery.reference ?? null,
+                deliveryFee: body.delivery.deliveryFee,
+              } } }
+            : {}),
         },
         include: orderInclude,
       });
@@ -93,6 +103,7 @@ export const createOrder = async (req: Request, res: Response) => {
     const view = toOrderView(result.order);
     emit(result.created ? 'order:created' : 'order:updated', view);
     if (result.table) emit('table:updated', result.table);
+    if (view.delivery) emit('delivery:updated', deliveryEvent(view));
     res.status(result.created ? 201 : 200).json(view);
   } catch (err) {
     sendError(res, err, 'createOrder');
@@ -215,14 +226,24 @@ export const updateStatus = async (req: Request, res: Response) => {
         throw new HttpError(409, `Transición no permitida: ${locked.status} → ${status}`);
       }
 
-      const order = await tx.order.update({ where: { id: orderId }, data: { status }, include: orderInclude });
-      const table = status === 'CANCELLED' ? await freeTableIfIdle(tx, locked.tableId) : null;
+      const cancel = status === 'CANCELLED';
+      const order = await tx.order.update({
+        where: { id: orderId },
+        data:  {
+          status,
+          // Cancelar la orden es la única vía para cancelar su entrega (y exige que no esté pagada)
+          ...(cancel && locked.deliveryId ? { delivery: { update: { status: 'CANCELLED' } } } : {}),
+        },
+        include: orderInclude,
+      });
+      const table = cancel ? await freeTableIfIdle(tx, locked.tableId) : null;
       return { order, table };
     }, TX_OPTS);
 
     const view = toOrderView(result.order);
     emit('order:updated', view);
     if (result.table) emit('table:updated', result.table);
+    if (status === 'CANCELLED' && view.delivery) emit('delivery:updated', deliveryEvent(view));
     res.json(view);
   } catch (err) {
     sendError(res, err, 'updateStatus');
@@ -251,7 +272,8 @@ export const payOrder = async (req: Request, res: Response) => {
         },
       });
 
-      const total = orderTotal(items);
+      // Total = productos + cargo de envío (0 si no es a domicilio); mismas reglas de cobro
+      const total = orderTotal(items).add(locked.deliveryFee);
       let changeGiven: Prisma.Decimal | null = null;
 
       if (method === 'CASH') {
@@ -277,6 +299,7 @@ export const payOrder = async (req: Request, res: Response) => {
     const view = toOrderView(result.order);
     emit('order:paid', view);
     if (result.table) emit('table:updated', result.table);
+    if (view.delivery) emit('delivery:updated', deliveryEvent(view));
     res.status(201).json(view);
   } catch (err) {
     // Carrera entre dos cobros simultáneos: la restricción única de Payment.orderId lo detiene

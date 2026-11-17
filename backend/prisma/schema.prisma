@@ -146,13 +146,19 @@ model Payment {
 model Delivery {
   id          String         @id @default(uuid())
   orderId     String         @unique
-  employeeId  String
+  employeeId  String?        // repartidor como usuario del sistema (opcional; hoy se usa driverName)
   address     String
+  phone       String         // 10 dígitos, normalizado
+  reference   String?
+  deliveryFee Decimal        @default(0) @db.Decimal(10, 2)
+  driverName  String?        // obligatorio al pasar a IN_TRANSIT
   status      DeliveryStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  inTransitAt DateTime?
   deliveredAt DateTime?
 
   order    Order @relation(fields: [orderId], references: [id])
-  employee User  @relation("EmployeeDeliveries", fields: [employeeId], references: [id])
+  employee User? @relation("EmployeeDeliveries", fields: [employeeId], references: [id])
 }
 
 model Expense {

@@ -37,11 +37,14 @@ export interface Summary {
   cost: number; grossMargin: number; grossMarginPct: number;
   expenses: number; profit: number;
   itemsSold: number; cancelledOrders: number;
+  // Conciliación: sales = productSales + deliveryFees
+  productSales: number; deliveryFees: number;
+  deliveriesDelivered: number; deliveriesCancelled: number;
 }
 
 export const summary = async (r: ReportRange): Promise<Summary> => {
   const [row] = await prisma.$queryRaw<{
-    sales: Prisma.Decimal | null; tickets: number; cost: Prisma.Decimal | null; items: number | null;
+    sales: Prisma.Decimal | null; tickets: number; cost: Prisma.Decimal | null; items: number | null; fees: Prisma.Decimal | null;
   }[]>`
     WITH paid AS (${paidOrders(r)})
     SELECT (SELECT COALESCE(SUM(amount), 0) FROM paid)::numeric(14,2)            AS sales,
@@ -49,7 +52,16 @@ export const summary = async (r: ReportRange): Promise<Summary> => {
            (SELECT COALESCE(SUM(i.quantity * i."unitCost"), 0)
               FROM "OrderItem" i JOIN paid ON paid.id = i."orderId")::numeric(14,2) AS cost,
            (SELECT COALESCE(SUM(i.quantity), 0)
-              FROM "OrderItem" i JOIN paid ON paid.id = i."orderId")::int        AS items`;
+              FROM "OrderItem" i JOIN paid ON paid.id = i."orderId")::int        AS items,
+           (SELECT COALESCE(SUM(d."deliveryFee"), 0)
+              FROM "Delivery" d JOIN paid ON paid.id = d."orderId")::numeric(14,2) AS fees`;
+
+  // Entregas realizadas (por fecha de entrega) y canceladas (por fecha de cancelación de la orden)
+  const [dl] = await prisma.$queryRaw<{ delivered: number; cancelled: number }[]>`
+    SELECT (SELECT COUNT(*) FROM "Delivery" d
+             WHERE d.status = 'DELIVERED' AND ${inRange(Prisma.sql`d."deliveredAt"`, r)})::int AS delivered,
+           (SELECT COUNT(*) FROM "Delivery" d JOIN "Order" o ON o.id = d."orderId"
+             WHERE d.status = 'CANCELLED' AND ${inRange(Prisma.sql`o."updatedAt"`, r)})::int AS cancelled`;
 
   // Canceladas: por fecha de cancelación (updatedAt de la orden al pasar a CANCELLED)
   const [cancel] = await prisma.$queryRaw<{ count: number }[]>`
@@ -60,7 +72,7 @@ export const summary = async (r: ReportRange): Promise<Summary> => {
     SELECT COALESCE(SUM(e.amount), 0)::numeric(14,2) AS total FROM "Expense" e
      WHERE ${inRange(Prisma.sql`e."expenseDate"`, r)}`;
 
-  const sales = money(row.sales), cost = money(row.cost), expenses = money(exp.total);
+  const sales = money(row.sales), cost = money(row.cost), expenses = money(exp.total), fees = money(row.fees);
   const grossMargin = money(sales - cost);
   return {
     from: r.from, to: r.to,
@@ -68,7 +80,32 @@ export const summary = async (r: ReportRange): Promise<Summary> => {
     cost, grossMargin, grossMarginPct: ratio(grossMargin, sales),
     expenses, profit: money(grossMargin - expenses),
     itemsSold: n(row.items), cancelledOrders: cancel.count,
+    productSales: money(sales - fees), deliveryFees: fees,
+    deliveriesDelivered: dl.delivered, deliveriesCancelled: dl.cancelled,
   };
+};
+
+// ── Entregas a domicilio del periodo (por fecha de creación de la orden) ──
+export interface DeliveryRow {
+  date: string; ticketNumber: number; customer: string; phone: string; address: string;
+  driver: string; fee: number; status: string; minutes: number | null;
+}
+
+export const deliveries = async (r: ReportRange): Promise<DeliveryRow[]> => {
+  const rows = await prisma.$queryRaw<{
+    date: string; ticketNumber: number; customer: string | null; phone: string; address: string;
+    driver: string | null; fee: Prisma.Decimal; status: string; minutes: number | null;
+  }[]>`
+    SELECT to_char(${local(Prisma.sql`d."createdAt"`)}, 'YYYY-MM-DD') AS date,
+           o."ticketNumber", o."customerName" AS customer, d.phone, d.address,
+           d."driverName" AS driver, d."deliveryFee" AS fee, d.status::text AS status,
+           -- Minutos desde que se registró la orden hasta que se entregó
+           CASE WHEN d."deliveredAt" IS NULL THEN NULL
+                ELSE ROUND(EXTRACT(EPOCH FROM (d."deliveredAt" - d."createdAt")) / 60)::int END AS minutes
+      FROM "Delivery" d JOIN "Order" o ON o.id = d."orderId"
+     WHERE ${inRange(Prisma.sql`d."createdAt"`, r)}
+     ORDER BY d."createdAt", o."ticketNumber"`;
+  return rows.map((x) => ({ ...x, customer: x.customer ?? '', driver: x.driver ?? '', fee: money(x.fee) }));
 };
 
 // ── Ventas por periodo (día, semana ISO desde lunes, mes) ────
