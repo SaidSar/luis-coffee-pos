@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import ConnectionIndicator from './ConnectionIndicator';
 
 const pageTitles: Record<string, string> = {
   '/dashboard':  'Dashboard',
@@ -44,8 +45,9 @@ export default function Header({ onMenuClick }: Props) {
         <h1 className="text-xl font-bold text-espresso">{title}</h1>
       </div>
 
-      {/* Derecha: usuario */}
+      {/* Derecha: estado de conexión + usuario */}
       <div className="flex items-center gap-3">
+        <ConnectionIndicator />
         <div className="text-right hidden sm:block">
           <p className="text-sm font-semibold text-espresso leading-tight">{user?.name}</p>
           <p className="text-xs text-caramel-dark">

@@ -1,13 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tablesService, ordersService } from '../services/posService';
+import { useRealtimeStore } from '../stores/realtimeStore';
 import type { Order, CreateOrderInput, OrderItemInput, OrderStatus, OrderStatusChange, PayOrderInput } from '../types/pos';
 
 const TABLES   = ['tables'] as const;
 const ORDERS   = ['orders'] as const;
 const PRODUCTS = ['products'] as const;
 
-// El POS se comparte entre varios equipos: refresco periódico corto como respaldo
-const REFRESH_MS = 15_000;
+// Polling de respaldo: con el socket en línea los cambios llegan por eventos (60 s basta);
+// sin conexión en tiempo real se vuelve a 15 s
+const REFRESH_ONLINE_MS  = 60_000;
+const REFRESH_OFFLINE_MS = 15_000;
+const useRefreshInterval = () =>
+  useRealtimeStore((s) => (s.status === 'connected' ? REFRESH_ONLINE_MS : REFRESH_OFFLINE_MS));
 
 // Invalida mesas y órdenes después de cualquier cambio (el servidor es la fuente de verdad)
 const useInvalidatePos = () => {
@@ -27,15 +32,19 @@ const useCacheOrder = () => {
 };
 
 // ── Consultas ─────────────────────────────────────────────────
-export const useTables = () =>
-  useQuery({ queryKey: TABLES, queryFn: tablesService.list, refetchInterval: REFRESH_MS });
+export const useTables = () => {
+  const refetchInterval = useRefreshInterval();
+  return useQuery({ queryKey: TABLES, queryFn: tablesService.list, refetchInterval });
+};
 
-export const useOrders = (statuses?: OrderStatus[]) =>
-  useQuery({
-    queryKey:        [...ORDERS, 'list', statuses?.join(',') ?? 'all'],
-    queryFn:         () => ordersService.list(statuses),
-    refetchInterval: REFRESH_MS,
+export const useOrders = (statuses?: OrderStatus[]) => {
+  const refetchInterval = useRefreshInterval();
+  return useQuery({
+    queryKey: [...ORDERS, 'list', statuses?.join(',') ?? 'all'],
+    queryFn:  () => ordersService.list(statuses),
+    refetchInterval,
   });
+};
 
 export const useOrder = (id: string | null) =>
   useQuery({
