@@ -1,6 +1,6 @@
+import 'dotenv/config'; // primero: carga .env antes de que otros módulos lean process.env
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 
@@ -8,8 +8,6 @@ import { Server } from 'socket.io';
 import authRoutes from './routes/auth.routes';
 import categoryRoutes from './routes/categories.routes';
 import productRoutes  from './routes/products.routes';
-
-dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
