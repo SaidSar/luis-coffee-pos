@@ -7,8 +7,10 @@ type Tx = Prisma.TransactionClient;
 // Estados en los que una orden sigue abierta (ocupa la mesa y admite cambios o pago)
 export const ACTIVE_STATUSES: OrderStatus[] = ['OPEN', 'IN_KITCHEN', 'SERVED'];
 
-// Las transacciones van por el pooler de Supabase: damos margen a la latencia
-export const TX_OPTS = { maxWait: 10_000, timeout: 20_000 };
+// Las transacciones van por el pooler de Supabase (RTT ~93 ms hasta us-east-1 y ~2 viajes por consulta
+// con pgbouncer=true). maxWait: espera por conexión libre; timeout: duración máxima de la transacción.
+// Holgados para que la latencia alta no produzca P2028 (las transacciones actuales tardan ~1-2 s).
+export const TX_OPTS = { maxWait: 15_000, timeout: 30_000 };
 
 // ── Schemas (zod) ───────────────────────────────────────────
 const id = z.uuid({ message: 'ID inválido' });
@@ -68,8 +70,13 @@ export const listQuerySchema = z.object({
 });
 
 // ── Include y vista con totales ─────────────────────────────
+// Con relationJoins (schema.prisma) este include se resuelve en UNA consulta.
+// Items en orden cronológico (rondas); desempate por id dentro de una misma ronda.
 export const orderInclude = {
-  items:   { include: { product: { select: { id: true, name: true } } }, orderBy: { id: 'asc' } },
+  items:   {
+    include: { product: { select: { id: true, name: true } } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  },
   table:   { select: { id: true, number: true } },
   user:    { select: { id: true, name: true } },
   payment: true,
@@ -88,14 +95,16 @@ export const toOrderView = (order: OrderWithRelations) => ({
 });
 
 // ── Reglas compartidas ──────────────────────────────────────
-// Valida productos (existen y están disponibles) y congela el precio actual en unitPrice
+type TrackedProduct = { id: string; name: string; stock: number };
+
+// Una sola consulta: valida que existan y estén disponibles, congela el precio (unitPrice)
+// y devuelve los datos de stock de los productos con trackStock para assertStock.
 export const resolveItems = async (tx: Tx, items: z.infer<typeof itemSchema>[]) => {
   const ids = [...new Set(items.map((i) => i.productId))];
   const products = await tx.product.findMany({
     where:  { id: { in: ids } },
-    select: { id: true, name: true, price: true, isAvailable: true },
+    select: { id: true, name: true, price: true, isAvailable: true, trackStock: true, stock: true },
   });
-  // (el stock se valida aparte con assertStock, solo para productos con trackStock)
   const byId = new Map(products.map((p) => [p.id, p]));
 
   const missing = ids.filter((pid) => !byId.has(pid));
@@ -104,12 +113,15 @@ export const resolveItems = async (tx: Tx, items: z.infer<typeof itemSchema>[]) 
   const unavailable = products.filter((p) => !p.isAvailable).map((p) => p.name);
   if (unavailable.length) throw new HttpError(409, 'Productos no disponibles', { products: unavailable });
 
-  return items.map((i) => ({
-    productId: i.productId,
-    quantity:  i.quantity,
-    notes:     i.notes || null,
-    unitPrice: byId.get(i.productId)!.price,
-  }));
+  return {
+    items: items.map((i) => ({
+      productId: i.productId,
+      quantity:  i.quantity,
+      notes:     i.notes || null,
+      unitPrice: byId.get(i.productId)!.price,
+    })),
+    tracked: products.filter((p) => p.trackStock).map(({ id, name, stock }) => ({ id, name, stock })),
+  };
 };
 
 // Suma cantidades por producto
@@ -119,46 +131,111 @@ export const sumByProduct = (items: { productId: string; quantity: number }[]) =
   return totals;
 };
 
-// Al crear o agregar productos: verifica que haya stock para lo pedido más lo que ya tiene la orden.
-// Solo aplica a productos con trackStock=true; el descuento real ocurre al cobrar.
+// Al crear o agregar productos: verifica stock de lo pedido más lo que ya tiene la orden.
+// Solo productos con trackStock=true; si no hay ninguno no consulta nada. El descuento real ocurre al cobrar.
 export const assertStock = async (
   tx: Tx,
   newItems: { productId: string; quantity: number }[],
+  tracked: TrackedProduct[],
   orderId?: string,
 ) => {
+  if (tracked.length === 0) return;
+  const trackedIds = tracked.map((p) => p.id);
   const existing = orderId
-    ? await tx.orderItem.findMany({ where: { orderId }, select: { productId: true, quantity: true } })
+    ? await tx.orderItem.findMany({
+        where:  { orderId, productId: { in: trackedIds } },
+        select: { productId: true, quantity: true },
+      })
     : [];
-  const needed = sumByProduct([...existing, ...newItems.map((i) => ({ productId: i.productId, quantity: i.quantity }))]);
-  const requestedIds = [...new Set(newItems.map((i) => i.productId))];
-
-  const tracked = await tx.product.findMany({
-    where:  { id: { in: requestedIds }, trackStock: true },
-    select: { id: true, name: true, stock: true },
-  });
+  const needed = sumByProduct([...existing, ...newItems]);
   const insufficient = tracked.filter((p) => p.stock < (needed.get(p.id) ?? 0)).map((p) => p.name);
   if (insufficient.length) throw new HttpError(409, 'Stock insuficiente', { products: insufficient });
 };
 
-// Bloqueo de fila (SELECT ... FOR UPDATE) para serializar operaciones concurrentes
-export const lockTable = async (tx: Tx, tableId: string) => {
-  const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Table" WHERE id = ${tableId} FOR UPDATE`;
+// Productos con control de stock entre los indicados (para cambios de cantidad de un ítem)
+export const trackedProducts = (tx: Tx, ids: string[]) =>
+  tx.product.findMany({ where: { id: { in: ids }, trackStock: true }, select: { id: true, name: true, stock: true } });
+
+// Marca la mesa OCCUPIED y devuelve su orden activa en UNA consulta. El UPDATE bloquea la fila
+// hasta el commit, así que dos pedidos simultáneos a la misma mesa se serializan.
+// Si ya tenía orden activa, la mesa ya estaba OCCUPIED: el estado no cambia en la práctica.
+export const occupyTable = async (tx: Tx, tableId: string) => {
+  const rows = await tx.$queryRaw<{
+    id: string; number: number; capacity: number; status: string; activeOrderId: string | null;
+  }[]>`
+    UPDATE "Table" t
+       SET status = 'OCCUPIED'
+     WHERE t.id = ${tableId}
+ RETURNING t.id, t.number, t.capacity, t.status::text AS status,
+           (SELECT o.id FROM "Order" o
+             WHERE o."tableId" = t.id AND o.status IN ('OPEN', 'IN_KITCHEN', 'SERVED')
+             ORDER BY o."createdAt" LIMIT 1) AS "activeOrderId"`;
   if (rows.length === 0) throw new HttpError(404, 'Mesa no encontrada');
+  const { activeOrderId, ...table } = rows[0];
+  return { table, activeOrderId };
 };
 
-export const lockOrder = async (tx: Tx, orderId: string) => {
-  const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+export interface LockedOrder {
+  status:    OrderStatus;
+  tableId:   string | null;
+  paid:      boolean;
+  itemCount: number;
+}
+
+// Bloquea la orden (FOR UPDATE) y devuelve en la misma consulta lo que las reglas necesitan
+export const lockOrder = async (tx: Tx, orderId: string): Promise<LockedOrder> => {
+  const rows = await tx.$queryRaw<LockedOrder[]>`
+    SELECT o.status::text AS status,
+           o."tableId",
+           EXISTS (SELECT 1 FROM "Payment" p WHERE p."orderId" = o.id) AS paid,
+           (SELECT count(*)::int FROM "OrderItem" i WHERE i."orderId" = o.id) AS "itemCount"
+      FROM "Order" o
+     WHERE o.id = ${orderId}
+       FOR UPDATE OF o`;
   if (rows.length === 0) throw new HttpError(404, 'Orden no encontrada');
+  return rows[0];
 };
 
-// Libera la mesa si estaba OCCUPIED y ya no le quedan órdenes activas
+// Descuenta stock en UN solo UPDATE condicional para los productos con trackStock=true.
+// Si alguna fila no se actualiza (stock insuficiente) lanza 409 con los nombres; el throw revierte la transacción.
+export const decrementStock = async (
+  tx: Tx,
+  items: { productId: string; quantity: number; product: { name: string; trackStock: boolean } }[],
+) => {
+  const tracked = items.filter((i) => i.product.trackStock);
+  if (tracked.length === 0) return;
+
+  const needed = sumByProduct(tracked);
+  const names  = new Map(tracked.map((i) => [i.productId, i.product.name]));
+  const ids    = [...needed.keys()];
+  const qtys   = ids.map((id) => needed.get(id)!);
+
+  const updated = await tx.$queryRaw<{ id: string }[]>`
+    UPDATE "Product" p
+       SET stock = p.stock - r.qty
+      FROM unnest(${ids}::text[], ${qtys}::int[]) AS r(id, qty)
+     WHERE p.id = r.id AND p."trackStock" = true AND p.stock >= r.qty
+ RETURNING p.id`;
+
+  if (updated.length !== ids.length) {
+    const ok = new Set(updated.map((r) => r.id));
+    throw new HttpError(409, 'Stock insuficiente', { products: ids.filter((id) => !ok.has(id)).map((id) => names.get(id)!) });
+  }
+};
+
+// Libera la mesa (UN solo UPDATE) si estaba OCCUPIED y ya no le quedan órdenes activas.
+// Devuelve la mesa con la misma forma que Prisma, o null si no cambió.
 export const freeTableIfIdle = async (tx: Tx, tableId: string | null) => {
   if (!tableId) return null;
-  const active = await tx.order.count({ where: { tableId, status: { in: ACTIVE_STATUSES } } });
-  if (active > 0) return null;
-  const table = await tx.table.findUnique({ where: { id: tableId } });
-  if (!table || table.status !== 'OCCUPIED') return null;
-  return tx.table.update({ where: { id: tableId }, data: { status: 'AVAILABLE' } });
+  const rows = await tx.$queryRaw<{ id: string; number: number; capacity: number; status: string }[]>`
+    UPDATE "Table" t
+       SET status = 'AVAILABLE'
+     WHERE t.id = ${tableId}
+       AND t.status = 'OCCUPIED'
+       AND NOT EXISTS (SELECT 1 FROM "Order" o
+                        WHERE o."tableId" = t.id AND o.status IN ('OPEN', 'IN_KITCHEN', 'SERVED'))
+ RETURNING t.id, t.number, t.capacity, t.status::text AS status`;
+  return rows[0] ?? null;
 };
 
 export const assertActive = (status: OrderStatus) => {

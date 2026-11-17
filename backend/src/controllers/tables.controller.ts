@@ -4,7 +4,7 @@ import { TableStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { HttpError, parse, sendError } from '../lib/http-error';
 import { emit } from '../services/socket.service';
-import { ACTIVE_STATUSES } from './orders.helpers';
+import { ACTIVE_STATUSES, TX_OPTS } from './orders.helpers';
 
 const createTableSchema = z.object({
   number:   z.number().int().positive(),
@@ -68,7 +68,7 @@ export const updateTable = async (req: Request, res: Response) => {
         throw new HttpError(409, 'La mesa tiene una orden activa');
       }
       return tx.table.update({ where: { id }, data });
-    });
+    }, TX_OPTS);
 
     emit('table:updated', table);
     res.json(table);

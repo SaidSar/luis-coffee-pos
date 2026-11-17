@@ -4,9 +4,9 @@ import { prisma } from '../lib/prisma';
 import { HttpError, parse, sendError } from '../lib/http-error';
 import { emit } from '../services/socket.service';
 import {
-  ACTIVE_STATUSES, TX_OPTS, orderInclude, toOrderView, orderTotal,
+  TX_OPTS, orderInclude, toOrderView, orderTotal,
   createOrderSchema, addItemsSchema, updateItemSchema, statusSchema, paymentSchema, listQuerySchema,
-  resolveItems, lockTable, lockOrder, freeTableIfIdle, assertActive, assertStock, sumByProduct,
+  resolveItems, occupyTable, lockOrder, freeTableIfIdle, assertActive, assertStock, trackedProducts, decrementStock,
 } from './orders.helpers';
 
 // Transiciones permitidas. CANCELLED además exige que no exista Payment y rol ADMIN o CASHIER.
@@ -53,41 +53,40 @@ export const createOrder = async (req: Request, res: Response) => {
     const userId = req.user!.id;
 
     const result = await prisma.$transaction(async (tx) => {
-      const items = await resolveItems(tx, body.items);
+      const { items, tracked } = await resolveItems(tx, body.items);
 
+      let table: Awaited<ReturnType<typeof occupyTable>>['table'] | null = null;
       if (body.type === 'DINE_IN') {
-        await lockTable(tx, body.tableId!);
-        const active = await tx.order.findFirst({
-          where:  { tableId: body.tableId, status: { in: ACTIVE_STATUSES } },
-          select: { id: true },
-        });
-        if (active) {
-          await assertStock(tx, items, active.id);
-          await tx.orderItem.createMany({ data: items.map((i) => ({ ...i, orderId: active.id })) });
+        const occupied = await occupyTable(tx, body.tableId!);
+        table = occupied.table;
+        const activeOrderId = occupied.activeOrderId;
+        if (activeOrderId) {
+          await assertStock(tx, items, tracked, activeOrderId);
+          // Nueva ronda: vuelve a OPEN para que se envíe otra vez a cocina
           const order = await tx.order.update({
-            where:   { id: active.id },
-            // Nueva ronda: vuelve a OPEN para que se envíe otra vez a cocina
-            data:    { status: 'OPEN', ...(body.customerName ? { customerName: body.customerName } : {}) },
+            where: { id: activeOrderId },
+            data:  {
+              status: 'OPEN',
+              ...(body.customerName ? { customerName: body.customerName } : {}),
+              items:  { createMany: { data: items } },
+            },
             include: orderInclude,
           });
           return { order, created: false, table: null };
         }
       }
 
-      await assertStock(tx, items);
+      await assertStock(tx, items, tracked);
       const order = await tx.order.create({
         data: {
           type:         body.type,
           tableId:      body.tableId ?? null,
           customerName: body.customerName ?? null,
           userId,
-          items:        { create: items },
+          items:        { createMany: { data: items } },
         },
         include: orderInclude,
       });
-      const table = body.tableId
-        ? await tx.table.update({ where: { id: body.tableId }, data: { status: 'OCCUPIED' } })
-        : null;
       return { order, created: true, table };
     }, TX_OPTS);
 
@@ -107,14 +106,16 @@ export const addItems = async (req: Request, res: Response) => {
     const body    = parse(addItemsSchema, req.body);
 
     const order = await prisma.$transaction(async (tx) => {
-      await lockOrder(tx, orderId);
-      const current = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
-      assertActive(current.status);
+      const locked = await lockOrder(tx, orderId);
+      assertActive(locked.status);
 
-      const items = await resolveItems(tx, body.items);
-      await assertStock(tx, items, orderId);
-      await tx.orderItem.createMany({ data: items.map((i) => ({ ...i, orderId })) });
-      return tx.order.update({ where: { id: orderId }, data: { status: 'OPEN' }, include: orderInclude });
+      const { items, tracked } = await resolveItems(tx, body.items);
+      await assertStock(tx, items, tracked, orderId);
+      return tx.order.update({
+        where:   { id: orderId },
+        data:    { status: 'OPEN', items: { createMany: { data: items } } },
+        include: orderInclude,
+      });
     }, TX_OPTS);
 
     const view = toOrderView(order);
@@ -127,12 +128,8 @@ export const addItems = async (req: Request, res: Response) => {
 
 // Cambios a productos ya pedidos: solo mientras la orden está OPEN (aún no enviada a cocina)
 const editableItem = async (tx: Prisma.TransactionClient, orderId: string, itemId: string) => {
-  await lockOrder(tx, orderId);
-  const order = await tx.order.findUniqueOrThrow({
-    where:  { id: orderId },
-    select: { status: true, _count: { select: { items: true } } },
-  });
-  if (order.status !== 'OPEN') {
+  const locked = await lockOrder(tx, orderId);
+  if (locked.status !== 'OPEN') {
     throw new HttpError(409, 'Solo se pueden modificar productos antes de enviar la orden a cocina');
   }
   const item = await tx.orderItem.findFirst({
@@ -140,7 +137,7 @@ const editableItem = async (tx: Prisma.TransactionClient, orderId: string, itemI
     select: { productId: true, quantity: true },
   });
   if (!item) throw new HttpError(404, 'Producto de la orden no encontrado');
-  return { count: order._count.items, item };
+  return { count: locked.itemCount, item };
 };
 
 // ── PATCH /api/orders/:id/items/:itemId ─────────────────────
@@ -154,10 +151,14 @@ export const updateItem = async (req: Request, res: Response) => {
       const { item } = await editableItem(tx, orderId, itemId);
       // Si sube la cantidad, valida stock solo por la diferencia (lo actual ya cuenta en la orden)
       if (data.quantity && data.quantity > item.quantity) {
-        await assertStock(tx, [{ productId: item.productId, quantity: data.quantity - item.quantity }], orderId);
+        const tracked = await trackedProducts(tx, [item.productId]);
+        await assertStock(tx, [{ productId: item.productId, quantity: data.quantity - item.quantity }], tracked, orderId);
       }
-      await tx.orderItem.update({ where: { id: itemId }, data });
-      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude });
+      return tx.order.update({
+        where:   { id: orderId },
+        data:    { items: { update: { where: { id: itemId }, data } } },
+        include: orderInclude,
+      });
     }, TX_OPTS);
 
     const view = toOrderView(order);
@@ -179,8 +180,11 @@ export const deleteItem = async (req: Request, res: Response) => {
       if (count <= 1) {
         throw new HttpError(409, 'La orden debe tener al menos un producto; cancélala si ya no se necesita');
       }
-      await tx.orderItem.delete({ where: { id: itemId } });
-      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude });
+      return tx.order.update({
+        where:   { id: orderId },
+        data:    { items: { delete: { id: itemId } } },
+        include: orderInclude,
+      });
     }, TX_OPTS);
 
     const view = toOrderView(order);
@@ -202,21 +206,17 @@ export const updateStatus = async (req: Request, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      await lockOrder(tx, orderId);
-      const current = await tx.order.findUniqueOrThrow({
-        where:  { id: orderId },
-        select: { status: true, tableId: true, payment: { select: { id: true } } },
-      });
+      const locked = await lockOrder(tx, orderId);
 
-      if (status === 'CANCELLED' && current.payment) {
+      if (status === 'CANCELLED' && locked.paid) {
         throw new HttpError(409, 'No se puede cancelar una orden pagada');
       }
-      if (!TRANSITIONS[current.status].includes(status)) {
-        throw new HttpError(409, `Transición no permitida: ${current.status} → ${status}`);
+      if (!TRANSITIONS[locked.status].includes(status)) {
+        throw new HttpError(409, `Transición no permitida: ${locked.status} → ${status}`);
       }
 
       const order = await tx.order.update({ where: { id: orderId }, data: { status }, include: orderInclude });
-      const table = status === 'CANCELLED' ? await freeTableIfIdle(tx, current.tableId) : null;
+      const table = status === 'CANCELLED' ? await freeTableIfIdle(tx, locked.tableId) : null;
       return { order, table };
     }, TX_OPTS);
 
@@ -237,27 +237,21 @@ export const payOrder = async (req: Request, res: Response) => {
     const { method, amountReceived } = parse(paymentSchema, req.body);
 
     const result = await prisma.$transaction(async (tx) => {
-      await lockOrder(tx, orderId);
-      const order = await tx.order.findUniqueOrThrow({
-        where:  { id: orderId },
+      const locked = await lockOrder(tx, orderId);
+
+      if (locked.paid || locked.status === 'PAID') throw new HttpError(409, 'La orden ya fue pagada');
+      if (locked.status === 'CANCELLED')           throw new HttpError(409, 'La orden está cancelada');
+      if (locked.itemCount === 0)                  throw new HttpError(409, 'La orden no tiene productos');
+
+      const items = await tx.orderItem.findMany({
+        where:  { orderId },
         select: {
-          status:  true,
-          tableId: true,
-          payment: { select: { id: true } },
-          items:   {
-            select: {
-              productId: true, quantity: true, unitPrice: true,
-              product:   { select: { name: true, trackStock: true } },
-            },
-          },
+          productId: true, quantity: true, unitPrice: true,
+          product:   { select: { name: true, trackStock: true } },
         },
       });
 
-      if (order.payment || order.status === 'PAID') throw new HttpError(409, 'La orden ya fue pagada');
-      if (order.status === 'CANCELLED')              throw new HttpError(409, 'La orden está cancelada');
-      if (order.items.length === 0)                  throw new HttpError(409, 'La orden no tiene productos');
-
-      const total = orderTotal(order.items);
+      const total = orderTotal(items);
       let changeGiven: Prisma.Decimal | null = null;
 
       if (method === 'CASH') {
@@ -269,24 +263,15 @@ export const payOrder = async (req: Request, res: Response) => {
         throw new HttpError(400, 'Con tarjeta o transferencia el monto debe ser igual al total', { total: total.toFixed(2) });
       }
 
-      // Descuento condicional de stock solo para productos con trackStock=true.
-      // Si alguno no alcanza, se revierte toda la transacción. Los demás nunca bloquean el cobro.
-      const trackedItems = order.items.filter((i) => i.product.trackStock);
-      const names        = new Map(trackedItems.map((i) => [i.productId, i.product.name]));
-      const insufficient: string[] = [];
-      for (const [productId, quantity] of sumByProduct(trackedItems)) {
-        const { count } = await tx.product.updateMany({
-          where: { id: productId, trackStock: true, stock: { gte: quantity } },
-          data:  { stock: { decrement: quantity } },
-        });
-        if (count === 0) insufficient.push(names.get(productId)!);
-      }
-      if (insufficient.length) throw new HttpError(409, 'Stock insuficiente', { products: insufficient });
+      // Un solo UPDATE condicional para los productos con trackStock; si falla, se revierte todo
+      await decrementStock(tx, items);
 
+      // INSERT directo (el create anidado añade un SELECT previo); la unicidad la garantizan
+      // el FOR UPDATE de lockOrder y la restricción única de Payment.orderId
       await tx.payment.create({ data: { orderId, method, amount: total, changeGiven } });
-      const updated = await tx.order.update({ where: { id: orderId }, data: { status: 'PAID' }, include: orderInclude });
-      const table   = await freeTableIfIdle(tx, order.tableId);
-      return { order: updated, table };
+      const order = await tx.order.update({ where: { id: orderId }, data: { status: 'PAID' }, include: orderInclude });
+      const table = await freeTableIfIdle(tx, locked.tableId);
+      return { order, table };
     }, TX_OPTS);
 
     const view = toOrderView(result.order);
