@@ -95,6 +95,7 @@ export const resolveItems = async (tx: Tx, items: z.infer<typeof itemSchema>[]) 
     where:  { id: { in: ids } },
     select: { id: true, name: true, price: true, isAvailable: true },
   });
+  // (el stock se valida aparte con assertStock, solo para productos con trackStock)
   const byId = new Map(products.map((p) => [p.id, p]));
 
   const missing = ids.filter((pid) => !byId.has(pid));
@@ -109,6 +110,34 @@ export const resolveItems = async (tx: Tx, items: z.infer<typeof itemSchema>[]) 
     notes:     i.notes || null,
     unitPrice: byId.get(i.productId)!.price,
   }));
+};
+
+// Suma cantidades por producto
+export const sumByProduct = (items: { productId: string; quantity: number }[]) => {
+  const totals = new Map<string, number>();
+  for (const i of items) totals.set(i.productId, (totals.get(i.productId) ?? 0) + i.quantity);
+  return totals;
+};
+
+// Al crear o agregar productos: verifica que haya stock para lo pedido más lo que ya tiene la orden.
+// Solo aplica a productos con trackStock=true; el descuento real ocurre al cobrar.
+export const assertStock = async (
+  tx: Tx,
+  newItems: { productId: string; quantity: number }[],
+  orderId?: string,
+) => {
+  const existing = orderId
+    ? await tx.orderItem.findMany({ where: { orderId }, select: { productId: true, quantity: true } })
+    : [];
+  const needed = sumByProduct([...existing, ...newItems.map((i) => ({ productId: i.productId, quantity: i.quantity }))]);
+  const requestedIds = [...new Set(newItems.map((i) => i.productId))];
+
+  const tracked = await tx.product.findMany({
+    where:  { id: { in: requestedIds }, trackStock: true },
+    select: { id: true, name: true, stock: true },
+  });
+  const insufficient = tracked.filter((p) => p.stock < (needed.get(p.id) ?? 0)).map((p) => p.name);
+  if (insufficient.length) throw new HttpError(409, 'Stock insuficiente', { products: insufficient });
 };
 
 // Bloqueo de fila (SELECT ... FOR UPDATE) para serializar operaciones concurrentes

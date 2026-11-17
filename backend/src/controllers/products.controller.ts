@@ -6,6 +6,11 @@ import { scanMenuImage, AI_SERVICE_UNAVAILABLE, AI_INVALID_RESPONSE } from '../s
 
 const include = { category: true };
 
+// trackStock llega como string en multipart ('true'/'false') o como boolean en JSON.
+// Cualquier otro valor (o ausente) devuelve undefined.
+const parseTrackStock = (v: unknown): boolean | undefined =>
+  v === true || v === 'true' ? true : v === false || v === 'false' ? false : undefined;
+
 export const getProducts = async (_: Request, res: Response) => {
   const data = await prisma.product.findMany({ include, orderBy: { name: 'asc' } });
   res.json(data);
@@ -20,7 +25,7 @@ export const getProduct = async (req: Request, res: Response) => {
 
 export const createProduct = async (req: Request, res: Response) => {
   try {
-    const { name, description, price, cost, stock, categoryId, isAvailable } = req.body;
+    const { name, description, price, cost, stock, categoryId, isAvailable, trackStock } = req.body;
 
     let imageUrl: string | undefined;
     if (req.file) imageUrl = await uploadImage(req.file.buffer, 'luis-coffee/products');
@@ -31,6 +36,8 @@ export const createProduct = async (req: Request, res: Response) => {
         price:       parseFloat(price),
         cost:        parseFloat(cost),
         stock:       parseInt(stock) || 0,
+        // Ausente → false (p. ej. la importación del escaneo con IA no lo envía)
+        trackStock:  parseTrackStock(trackStock) ?? false,
         categoryId,
         isAvailable: isAvailable !== 'false',
         imageUrl,
@@ -48,7 +55,7 @@ export const createProduct = async (req: Request, res: Response) => {
 export const updateProduct = async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id);
-    const { name, description, price, cost, stock, categoryId, isAvailable } = req.body;
+    const { name, description, price, cost, stock, categoryId, isAvailable, trackStock } = req.body;
 
     const existing = await prisma.product.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ message: 'Producto no encontrado' });
@@ -66,6 +73,8 @@ export const updateProduct = async (req: Request, res: Response) => {
         price:       parseFloat(price),
         cost:        parseFloat(cost),
         stock:       parseInt(stock),
+        // Ausente → se conserva el valor actual (el formulario actual aún no lo envía)
+        trackStock:  parseTrackStock(trackStock),
         categoryId,
         isAvailable: isAvailable !== 'false',
         imageUrl,
