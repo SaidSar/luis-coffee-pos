@@ -1,0 +1,220 @@
+import { Prisma } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+
+// Reportes con consultas agregadas en SQL. Todo valor externo va como parámetro ($queryRaw con
+// template literal de Prisma), nunca interpolado como texto.
+//
+// Fechas: las columnas DateTime de Prisma son "timestamp" sin zona que guardan UTC.
+//   - Hora local:   (col AT TIME ZONE 'UTC') AT TIME ZONE 'America/Mazatlan'
+//   - Rango:        [from 00:00 local, to+1 00:00 local) convertido a UTC  → "to" es inclusivo
+// Ventas: órdenes PAID cuya fecha de Payment.paidAt cae en el rango. Importe = Payment.amount.
+
+export const REPORT_TZ = 'America/Mazatlan';
+export type GroupBy = 'day' | 'week' | 'month';
+
+export interface ReportRange { from: string; to: string } // YYYY-MM-DD (zona America/Mazatlan)
+
+const local = (col: Prisma.Sql) => Prisma.sql`((${col} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Mazatlan')`;
+const startUtc = (d: string) => Prisma.sql`(((${d}::date)::timestamp AT TIME ZONE 'America/Mazatlan') AT TIME ZONE 'UTC')`;
+const endUtcExcl = (d: string) => Prisma.sql`((((${d}::date) + 1)::timestamp AT TIME ZONE 'America/Mazatlan') AT TIME ZONE 'UTC')`;
+const inRange = (col: Prisma.Sql, r: ReportRange) => Prisma.sql`${col} >= ${startUtc(r.from)} AND ${col} < ${endUtcExcl(r.to)}`;
+
+// Órdenes pagadas en el rango (base de todas las ventas)
+const paidOrders = (r: ReportRange) => Prisma.sql`
+  SELECT o.id, o."userId", p.method, p.amount, p."paidAt"
+    FROM "Order" o
+    JOIN "Payment" p ON p."orderId" = o.id
+   WHERE o.status = 'PAID' AND ${inRange(Prisma.sql`p."paidAt"`, r)}`;
+
+const n = (v: Prisma.Decimal | number | bigint | null | undefined) => (v == null ? 0 : Number(v));
+const money = (v: Prisma.Decimal | number | null | undefined) => Math.round(n(v) * 100) / 100;
+const ratio = (a: number, b: number) => (b === 0 ? 0 : Math.round((a / b) * 10000) / 10000);
+
+// ── Resumen ──────────────────────────────────────────────────
+export interface Summary {
+  from: string; to: string;
+  sales: number; tickets: number; averageTicket: number;
+  cost: number; grossMargin: number; grossMarginPct: number;
+  expenses: number; profit: number;
+  itemsSold: number; cancelledOrders: number;
+}
+
+export const summary = async (r: ReportRange): Promise<Summary> => {
+  const [row] = await prisma.$queryRaw<{
+    sales: Prisma.Decimal | null; tickets: number; cost: Prisma.Decimal | null; items: number | null;
+  }[]>`
+    WITH paid AS (${paidOrders(r)})
+    SELECT (SELECT COALESCE(SUM(amount), 0) FROM paid)::numeric(14,2)            AS sales,
+           (SELECT COUNT(*) FROM paid)::int                                       AS tickets,
+           (SELECT COALESCE(SUM(i.quantity * i."unitCost"), 0)
+              FROM "OrderItem" i JOIN paid ON paid.id = i."orderId")::numeric(14,2) AS cost,
+           (SELECT COALESCE(SUM(i.quantity), 0)
+              FROM "OrderItem" i JOIN paid ON paid.id = i."orderId")::int        AS items`;
+
+  // Canceladas: por fecha de cancelación (updatedAt de la orden al pasar a CANCELLED)
+  const [cancel] = await prisma.$queryRaw<{ count: number }[]>`
+    SELECT COUNT(*)::int AS count FROM "Order" o
+     WHERE o.status = 'CANCELLED' AND ${inRange(Prisma.sql`o."updatedAt"`, r)}`;
+
+  const [exp] = await prisma.$queryRaw<{ total: Prisma.Decimal | null }[]>`
+    SELECT COALESCE(SUM(e.amount), 0)::numeric(14,2) AS total FROM "Expense" e
+     WHERE ${inRange(Prisma.sql`e."expenseDate"`, r)}`;
+
+  const sales = money(row.sales), cost = money(row.cost), expenses = money(exp.total);
+  const grossMargin = money(sales - cost);
+  return {
+    from: r.from, to: r.to,
+    sales, tickets: row.tickets, averageTicket: row.tickets ? money(sales / row.tickets) : 0,
+    cost, grossMargin, grossMarginPct: ratio(grossMargin, sales),
+    expenses, profit: money(grossMargin - expenses),
+    itemsSold: n(row.items), cancelledOrders: cancel.count,
+  };
+};
+
+// ── Ventas por periodo (día, semana ISO desde lunes, mes) ────
+export interface SalesPeriod { period: string; label: string; tickets: number; sales: number; cost: number; grossMargin: number }
+
+export const salesByPeriod = async (r: ReportRange, groupBy: GroupBy): Promise<SalesPeriod[]> => {
+  // date_trunc('week', …) en Postgres usa semanas ISO (inician en lunes)
+  const rows = await prisma.$queryRaw<{
+    period: string; label: string; tickets: number; sales: Prisma.Decimal; cost: Prisma.Decimal;
+  }[]>`
+    WITH paid AS (${paidOrders(r)}),
+    per_order AS (
+      SELECT paid.id, paid.amount,
+             date_trunc(${groupBy}, ${local(Prisma.sql`paid."paidAt"`)}) AS bucket,
+             (SELECT COALESCE(SUM(i.quantity * i."unitCost"), 0) FROM "OrderItem" i WHERE i."orderId" = paid.id) AS cost
+        FROM paid
+    ),
+    buckets AS (
+      SELECT generate_series(
+               date_trunc(${groupBy}, (${r.from}::date)::timestamp),
+               date_trunc(${groupBy}, (${r.to}::date)::timestamp),
+               ('1 ' || ${groupBy})::interval) AS bucket
+    )
+    SELECT to_char(b.bucket, 'YYYY-MM-DD') AS period,
+           CASE ${groupBy}
+             WHEN 'week'  THEN to_char(b.bucket, 'IYYY-"S"IW')
+             WHEN 'month' THEN to_char(b.bucket, 'YYYY-MM')
+             ELSE to_char(b.bucket, 'YYYY-MM-DD')
+           END AS label,
+           COUNT(po.id)::int                              AS tickets,
+           COALESCE(SUM(po.amount), 0)::numeric(14,2)     AS sales,
+           COALESCE(SUM(po.cost), 0)::numeric(14,2)       AS cost
+      FROM buckets b
+      LEFT JOIN per_order po ON po.bucket = b.bucket
+     GROUP BY b.bucket
+     ORDER BY b.bucket`;
+
+  return rows.map((x) => {
+    const sales = money(x.sales), cost = money(x.cost);
+    return { period: x.period, label: x.label, tickets: x.tickets, sales, cost, grossMargin: money(sales - cost) };
+  });
+};
+
+// ── Por producto y por categoría ─────────────────────────────
+export interface ProductRow { productId: string; product: string; category: string; quantity: number; sales: number; cost: number; grossMargin: number; grossMarginPct: number }
+
+export const byProduct = async (r: ReportRange): Promise<ProductRow[]> => {
+  const rows = await prisma.$queryRaw<{
+    productId: string; product: string; category: string; quantity: number; sales: Prisma.Decimal; cost: Prisma.Decimal;
+  }[]>`
+    WITH paid AS (${paidOrders(r)})
+    SELECT pr.id AS "productId", pr.name AS product, c.name AS category,
+           SUM(i.quantity)::int                               AS quantity,
+           SUM(i.quantity * i."unitPrice")::numeric(14,2)     AS sales,
+           SUM(i.quantity * i."unitCost")::numeric(14,2)      AS cost
+      FROM paid
+      JOIN "OrderItem" i ON i."orderId" = paid.id
+      JOIN "Product"  pr ON pr.id = i."productId"
+      JOIN "Category" c  ON c.id = pr."categoryId"
+     GROUP BY pr.id, pr.name, c.name
+     ORDER BY sales DESC, pr.name`;
+  return rows.map((x) => {
+    const sales = money(x.sales), cost = money(x.cost), gm = money(sales - cost);
+    return { productId: x.productId, product: x.product, category: x.category, quantity: x.quantity, sales, cost, grossMargin: gm, grossMarginPct: ratio(gm, sales) };
+  });
+};
+
+export interface CategoryRow { category: string; quantity: number; sales: number; cost: number; grossMargin: number }
+
+export const byCategory = async (r: ReportRange): Promise<CategoryRow[]> => {
+  const rows = await prisma.$queryRaw<{ category: string; quantity: number; sales: Prisma.Decimal; cost: Prisma.Decimal }[]>`
+    WITH paid AS (${paidOrders(r)})
+    SELECT c.name AS category,
+           SUM(i.quantity)::int                           AS quantity,
+           SUM(i.quantity * i."unitPrice")::numeric(14,2) AS sales,
+           SUM(i.quantity * i."unitCost")::numeric(14,2)  AS cost
+      FROM paid
+      JOIN "OrderItem" i ON i."orderId" = paid.id
+      JOIN "Product"  pr ON pr.id = i."productId"
+      JOIN "Category" c  ON c.id = pr."categoryId"
+     GROUP BY c.id, c.name
+     ORDER BY sales DESC, c.name`;
+  return rows.map((x) => {
+    const sales = money(x.sales), cost = money(x.cost);
+    return { category: x.category, quantity: x.quantity, sales, cost, grossMargin: money(sales - cost) };
+  });
+};
+
+// ── Por método de pago ───────────────────────────────────────
+export interface PaymentMethodRow { method: 'CASH' | 'CARD' | 'TRANSFER'; tickets: number; sales: number }
+
+export const byPaymentMethod = async (r: ReportRange): Promise<PaymentMethodRow[]> => {
+  const rows = await prisma.$queryRaw<{ method: PaymentMethodRow['method']; tickets: number; sales: Prisma.Decimal }[]>`
+    WITH paid AS (${paidOrders(r)})
+    SELECT paid.method::text AS method, COUNT(*)::int AS tickets, SUM(paid.amount)::numeric(14,2) AS sales
+      FROM paid GROUP BY paid.method ORDER BY sales DESC`;
+  return rows.map((x) => ({ method: x.method, tickets: x.tickets, sales: money(x.sales) }));
+};
+
+// ── Por empleado (quien tomó la orden) ───────────────────────
+export interface EmployeeRow { userId: string; employee: string; role: string; tickets: number; sales: number; averageTicket: number }
+
+export const byEmployee = async (r: ReportRange): Promise<EmployeeRow[]> => {
+  const rows = await prisma.$queryRaw<{ userId: string; employee: string; role: string; tickets: number; sales: Prisma.Decimal }[]>`
+    WITH paid AS (${paidOrders(r)})
+    SELECT u.id AS "userId", u.name AS employee, u.role::text AS role,
+           COUNT(*)::int AS tickets, SUM(paid.amount)::numeric(14,2) AS sales
+      FROM paid JOIN "User" u ON u.id = paid."userId"
+     GROUP BY u.id, u.name, u.role
+     ORDER BY sales DESC, u.name`;
+  return rows.map((x) => {
+    const sales = money(x.sales);
+    return { userId: x.userId, employee: x.employee, role: x.role, tickets: x.tickets, sales, averageTicket: x.tickets ? money(sales / x.tickets) : 0 };
+  });
+};
+
+// ── Gastos del periodo ───────────────────────────────────────
+export interface ExpenseRow { date: string; description: string; category: string; user: string; amount: number }
+
+export const expenses = async (r: ReportRange): Promise<ExpenseRow[]> => {
+  const rows = await prisma.$queryRaw<{ date: string; description: string; category: string; user: string; amount: Prisma.Decimal }[]>`
+    SELECT to_char(${local(Prisma.sql`e."expenseDate"`)}, 'YYYY-MM-DD') AS date,
+           e.description, e.category, u.name AS "user", e.amount::numeric(14,2) AS amount
+      FROM "Expense" e JOIN "User" u ON u.id = e."userId"
+     WHERE ${inRange(Prisma.sql`e."expenseDate"`, r)}
+     ORDER BY e."expenseDate", e.description`;
+  return rows.map((x) => ({ ...x, amount: money(x.amount) }));
+};
+
+// ── Inventario (estado actual, no depende del rango) ─────────
+export interface InventoryRow {
+  product: string; category: string; price: number; cost: number;
+  trackStock: boolean; stock: number; isAvailable: boolean; stockValue: number;
+}
+
+export const inventory = async (): Promise<InventoryRow[]> => {
+  const rows = await prisma.$queryRaw<{
+    product: string; category: string; price: Prisma.Decimal; cost: Prisma.Decimal; trackStock: boolean; stock: number; isAvailable: boolean;
+  }[]>`
+    SELECT pr.name AS product, c.name AS category, pr.price, pr.cost, pr."trackStock", pr.stock, pr."isAvailable"
+      FROM "Product" pr JOIN "Category" c ON c.id = pr."categoryId"
+     ORDER BY c.name, pr.name`;
+  return rows.map((x) => ({
+    product: x.product, category: x.category, price: money(x.price), cost: money(x.cost),
+    trackStock: x.trackStock, stock: x.stock, isAvailable: x.isAvailable,
+    // Valor del inventario solo para productos con control de stock
+    stockValue: x.trackStock ? money(n(x.cost) * x.stock) : 0,
+  }));
+};

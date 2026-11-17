@@ -97,13 +97,13 @@ export const toOrderView = (order: OrderWithRelations) => ({
 // ── Reglas compartidas ──────────────────────────────────────
 type TrackedProduct = { id: string; name: string; stock: number };
 
-// Una sola consulta: valida que existan y estén disponibles, congela el precio (unitPrice)
+// Una sola consulta: valida que existan y estén disponibles, congela precio y costo (unitPrice, unitCost)
 // y devuelve los datos de stock de los productos con trackStock para assertStock.
 export const resolveItems = async (tx: Tx, items: z.infer<typeof itemSchema>[]) => {
   const ids = [...new Set(items.map((i) => i.productId))];
   const products = await tx.product.findMany({
     where:  { id: { in: ids } },
-    select: { id: true, name: true, price: true, isAvailable: true, trackStock: true, stock: true },
+    select: { id: true, name: true, price: true, cost: true, isAvailable: true, trackStock: true, stock: true },
   });
   const byId = new Map(products.map((p) => [p.id, p]));
 
@@ -119,6 +119,7 @@ export const resolveItems = async (tx: Tx, items: z.infer<typeof itemSchema>[]) 
       quantity:  i.quantity,
       notes:     i.notes || null,
       unitPrice: byId.get(i.productId)!.price,
+      unitCost:  byId.get(i.productId)!.cost, // snapshot del costo para reportes de margen
     })),
     tracked: products.filter((p) => p.trackStock).map(({ id, name, stock }) => ({ id, name, stock })),
   };
