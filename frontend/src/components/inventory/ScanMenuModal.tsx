@@ -8,6 +8,7 @@ import { useCreateProduct, useCategories } from '../../hooks/useProducts';
 interface ScanItem extends ScannedProduct {
   selected:           boolean;
   resolvedCategoryId: string;
+  description?:       string;
 }
 
 interface Props {
@@ -41,31 +42,36 @@ export default function ScanMenuModal({ onClose }: Props) {
     setPreview(URL.createObjectURL(file));
   };
 
-    const handleScan = async () => {
-        if (!image) return;
-        setStep('scanning');
-        try {
-        const scanned = await productService.scanMenu(image);
-        setResults(
-            scanned.map(p => ({
-            ...p,
-            selected:           true,
-            resolvedCategoryId: matchCategory(p.category),
-            }))
-        );
-        setStep('review');
-        } catch (error: unknown) {
-        // Usamos type assertion seguro para evitar el error de ESLint
-        const err = error as { response?: { status?: number }; message?: string };
-        
-        if (err?.response?.status === 503 || err?.message?.includes('503') || err?.message?.includes('AI_SERVICE_UNAVAILABLE')) {
-            alert('Función de escaneo por IA no disponible temporalmente.');
-        } else {
-            alert('Error al analizar la imagen. Intenta de nuevo.');
-        }
-        setStep('upload');
-        }
-    };
+  const handleScan = async () => {
+    if (!image) return;
+    setStep('scanning');
+    try {
+      const scanned = await productService.scanMenu(image);
+      setResults(
+        scanned.map(item => {
+          const rawItem = item as unknown as Record<string, unknown>;
+          return {
+            ...item,
+            selected: true,
+            resolvedCategoryId: matchCategory(item.category),
+            description: typeof rawItem.description === 'string' ? rawItem.description : '',
+          };
+        })
+      );
+      setStep('review');
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+
+      if (status === 503) {
+        alert('Función de escaneo por IA no disponible temporalmente. Inténtalo más tarde.');
+      } else if (status === 502) {
+        alert('La IA no pudo leer el menú. Intenta con una foto más clara.');
+      } else {
+        alert('Error al analizar la imagen. Intenta de nuevo.');
+      }
+      setStep('upload');
+    }
+  };
 
   const toggleItem  = (i: number) =>
     setResults(prev => prev.map((r, idx) =>
@@ -90,7 +96,9 @@ export default function ScanMenuModal({ onClose }: Props) {
       data.append('stock',        '0');
       data.append('categoryId',   item.resolvedCategoryId);
       data.append('isAvailable', 'true');
-      if (item.extras.length) data.append('description', `Extras: ${item.extras.join(', ')}`);
+      if (item.description) {
+        data.append('description', item.description);
+      }
       await createProduct.mutateAsync(data).catch(() => {});
     }
     setImporting(false);
@@ -227,9 +235,9 @@ export default function ScanMenuModal({ onClose }: Props) {
                         </span>
                       </div>
 
-                      {item.extras.length > 0 && (
+                      {item.description && (
                         <p className="text-xs text-espresso/70 mt-0.5 truncate">
-                          Extras: {item.extras.join(', ')}
+                          {item.description}
                         </p>
                       )}
 

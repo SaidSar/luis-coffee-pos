@@ -1,11 +1,19 @@
 import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI();
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Modelo configurable con GEMINI_MODEL; se lee en cada llamada para no depender del orden de carga de .env
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
+
+// Códigos de error que el controlador traduce a HTTP
+export const AI_SERVICE_UNAVAILABLE = 'AI_SERVICE_UNAVAILABLE'; // Gemini caído o la llamada falló → 503
+export const AI_INVALID_RESPONSE    = 'AI_INVALID_RESPONSE';    // respuesta vacía o JSON inválido → 502
 
 export const scanMenuImage = async (imageBase64: string, mimeType: string = 'image/jpeg') => {
-  try {
-    const prompt = `Analiza la imagen de este menú de cafetería. Extrae todos los platillos y bebidas que encuentres con sus precios y categorías aproximadas. 
-    Devuelve la respuesta estrictamente en formato JSON plano con esta estructura exacta, sin texto adicional ni bloques de código markdown:
+  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+
+  const prompt = `Analiza la imagen de este menú de cafetería. Extrae todos los platillos y bebidas que encuentres con sus precios y categorías aproximadas. 
+    Devuelve la respuesta estrictamente en formato JSON con esta estructura exacta:
     {
       "items": [
         {
@@ -17,9 +25,10 @@ export const scanMenuImage = async (imageBase64: string, mimeType: string = 'ima
       ]
     }`;
 
-    // Usamos estrictamente el modelo que el SDK y la API exigen
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model,
       contents: [
         {
           role: 'user',
@@ -29,22 +38,25 @@ export const scanMenuImage = async (imageBase64: string, mimeType: string = 'ima
           ]
         }
       ],
+      config: {
+        responseMimeType: 'application/json',
+      }
     });
+  } catch (error: unknown) {
+    console.error(`[gemini] Falló la llamada a ${model}:`, error instanceof Error ? error.message : error);
+    throw new Error(AI_SERVICE_UNAVAILABLE);
+  }
 
-    const textResponse = response.text;
-    if (!textResponse) {
-      throw new Error('No se recibió respuesta de Gemini');
-    }
+  const textResponse = response.text;
+  if (!textResponse) {
+    console.error('[gemini] Respuesta vacía');
+    throw new Error(AI_INVALID_RESPONSE);
+  }
 
-    const cleanJson = textResponse
-      .replace(/```json/gi, '')
-      .replace(/```/g, '')
-      .trim();
-
-    return JSON.parse(cleanJson);
-
-  } catch (error: any) {
-    console.error('>>> [AVISO] El escaneo por IA no está disponible temporalmente:', error.message || error);
-    throw new Error('AI_SERVICE_UNAVAILABLE');
+  try {
+    return JSON.parse(textResponse);
+  } catch (error: unknown) {
+    console.error('[gemini] La respuesta no es JSON válido:', error instanceof Error ? error.message : error);
+    throw new Error(AI_INVALID_RESPONSE);
   }
 };

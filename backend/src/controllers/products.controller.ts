@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { uploadImage, deleteImage } from '../services/cloudinary.service';
 //import { scanMenuImage } from '../services/anthropic.service';
-import { scanMenuImage } from '../services/gemini.service';
+import { scanMenuImage, AI_SERVICE_UNAVAILABLE, AI_INVALID_RESPONSE } from '../services/gemini.service';
 
 const include = { category: true };
 
@@ -106,8 +106,7 @@ export const deleteProduct = async (req: Request, res: Response) => {
   }
 };
 
-// ── IA: Escanear foto del menú (Actualizado a Base64 para Gemini) ───────────────────────────────
-// ── IA: Escanear foto del menú (Con trazabilidad total) ───────────────────────────────
+// ── IA: Escanear foto del menú con Gemini ───────────────────────────────
 export const scanMenu = async (req: Request, res: Response) => {
   try {
     if (!req.file) {
@@ -115,15 +114,22 @@ export const scanMenu = async (req: Request, res: Response) => {
     }
 
     const base64Image = req.file.buffer.toString('base64');
-    const products = await scanMenuImage(base64Image, req.file.mimetype);
+    const aiResult = await scanMenuImage(base64Image, req.file.mimetype);
 
-    res.json(products);
-  } catch (err: any) {
-    if (err.message === 'AI_SERVICE_UNAVAILABLE') {
-      return res.status(503).json({ 
-        message: 'Función no disponible temporalmente. Inténtalo más tarde.' 
-      });
+    // El modal espera un arreglo de platillos
+    return res.json(Array.isArray(aiResult?.items) ? aiResult.items : []);
+  } catch (err: unknown) {
+    const code = err instanceof Error ? err.message : '';
+
+    // Estos fallos ya los registra gemini.service
+    if (code === AI_SERVICE_UNAVAILABLE) {
+      return res.status(503).json({ message: 'El servicio de IA no está disponible. Inténtalo más tarde.' });
     }
-    res.status(500).json({ message: 'Error al analizar el menú con IA' });
+    if (code === AI_INVALID_RESPONSE) {
+      return res.status(502).json({ message: 'La IA devolvió una respuesta no válida. Intenta con otra foto.' });
+    }
+
+    console.error('[scanMenu] Error inesperado:', err);
+    return res.status(500).json({ message: 'Error al analizar el menú con IA' });
   }
 };
