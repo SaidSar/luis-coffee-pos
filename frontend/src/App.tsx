@@ -7,6 +7,7 @@ import Dashboard      from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import POS            from './pages/POS';
 import Reports        from './pages/Reports';
+import Expenses       from './pages/Expenses';
 import RequireRole    from './components/layout/RequireRole';
 
 const queryClient = new QueryClient({
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/employees"  element={<ProtectedPage><Soon name="Empleados"       /></ProtectedPage>} />
           <Route path="/deliveries" element={<ProtectedPage><Soon name="Entregas"        /></ProtectedPage>} />
           <Route path="/reports"    element={<ProtectedPage><RequireRole roles={['ADMIN']}><Reports /></RequireRole></ProtectedPage>} />
+          <Route path="/expenses"   element={<ProtectedPage><RequireRole roles={['ADMIN']} message="Solo un administrador puede gestionar los gastos."><Expenses /></RequireRole></ProtectedPage>} />
           
 
           {/* Raíz */}

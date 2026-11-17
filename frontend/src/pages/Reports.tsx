@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FileSpreadsheet, Loader2 } from 'lucide-react';
-import { presetRange, formatYmd, formatMonth, type DateRange, type PresetId } from '../lib/mazatlanDates';
+import { formatYmd, formatMonth } from '../lib/mazatlanDates';
+import { usePeriod } from '../hooks/usePeriod';
 import { describeApiError } from '../lib/apiError';
 import {
   useReportSummary, useReportSales, useReportProducts, useReportPaymentMethods, useReportEmployees, useExportExcel,
@@ -27,8 +28,7 @@ const periodLabel = (groupBy: GroupBy) => (p: SalesPeriod) =>
 const sum = <T,>(rows: T[], f: (r: T) => number) => rows.reduce((s, r) => s + f(r), 0);
 
 export default function Reports() {
-  const [preset,  setPreset]  = useState<PresetId | 'custom'>('thisMonth');
-  const [range,   setRange]   = useState<DateRange>(() => presetRange('thisMonth'));
+  const { preset, range, selectPreset, selectCustom } = usePeriod('thisMonth');
   const [groupBy, setGroupBy] = useState<GroupBy>('day');
   const [announcement, setAnnouncement] = useState('');
 
@@ -80,8 +80,8 @@ export default function Reports() {
           key={`${range.from}_${range.to}`}
           value={range}
           preset={preset}
-          onPreset={(id) => { setPreset(id); setRange(presetRange(id)); }}
-          onCustom={(r) => { setPreset('custom'); setRange(r); }}
+          onPreset={selectPreset}
+          onCustom={selectCustom}
         />
       </section>
 
