@@ -3,33 +3,14 @@ import { z } from 'zod';
 import { parse, sendError } from '../lib/http-error';
 import * as reports from '../services/reports.service';
 import { buildReportWorkbook } from '../services/excel.service';
+import { ymd, withRangeRules } from '../lib/dateSchemas';
 
-const MAX_DAYS = 366;
-
-// YYYY-MM-DD que además sea una fecha real del calendario (rechaza 2026-02-30)
-const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Formato de fecha YYYY-MM-DD' })
-  .refine((s) => {
-    const [y, m, d] = s.split('-').map(Number);
-    const dt = new Date(Date.UTC(y, m - 1, d));
-    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-  }, { message: 'Fecha inválida' });
-
-const dayNumber = (s: string) => {
-  const [y, m, d] = s.split('-').map(Number);
-  return Date.UTC(y, m - 1, d) / 86_400_000;
-};
-
-// from y to se interpretan en America/Mazatlan; "to" es inclusivo
-const querySchema = z
-  .object({
-    from:    ymd,
-    to:      ymd,
-    groupBy: z.enum(['day', 'week', 'month']).default('day'),
-  })
-  .refine((q) => q.from <= q.to, { message: 'from debe ser menor o igual que to', path: ['from'] })
-  .refine((q) => dayNumber(q.to) - dayNumber(q.from) + 1 <= MAX_DAYS, {
-    message: `El rango máximo es de ${MAX_DAYS} días`, path: ['to'],
-  });
+// from y to se interpretan en America/Mazatlan; "to" es inclusivo (máximo 366 días)
+const querySchema = withRangeRules(z.object({
+  from:    ymd,
+  to:      ymd,
+  groupBy: z.enum(['day', 'week', 'month']).default('day'),
+}));
 
 const range = (req: Request) => parse(querySchema, req.query);
 
