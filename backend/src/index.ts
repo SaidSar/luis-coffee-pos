@@ -18,7 +18,8 @@ const httpServer = createServer(app);
 // Socket.io con autenticación JWT en el handshake (ver services/socket.service.ts)
 export const io = initSocket(httpServer);
 
-app.use(cors({ origin: process.env.FRONTEND_URL }));
+// exposedHeaders: el frontend lee el nombre del .xlsx desde Content-Disposition (petición cross-origin)
+app.use(cors({ origin: process.env.FRONTEND_URL, exposedHeaders: ['Content-Disposition'] }));
 app.use(express.json());
 
 // ── API Routes ──────────────────────────────────────────────

@@ -6,6 +6,8 @@ import Login          from './pages/Login';
 import Dashboard      from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import POS            from './pages/POS';
+import Reports        from './pages/Reports';
+import RequireRole    from './components/layout/RequireRole';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,7 +46,7 @@ export default function App() {
           <Route path="/inventory"  element={<ProtectedPage><Inventory /></ProtectedPage>} />
           <Route path="/employees"  element={<ProtectedPage><Soon name="Empleados"       /></ProtectedPage>} />
           <Route path="/deliveries" element={<ProtectedPage><Soon name="Entregas"        /></ProtectedPage>} />
-          <Route path="/reports"    element={<ProtectedPage><Soon name="Reportes"        /></ProtectedPage>} />
+          <Route path="/reports"    element={<ProtectedPage><RequireRole roles={['ADMIN']}><Reports /></RequireRole></ProtectedPage>} />
           
 
           {/* Raíz */}

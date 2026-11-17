@@ -1,7 +1,7 @@
 import { isAxiosError } from 'axios';
 
 // Contexto de la operación: el mismo status significa cosas distintas según dónde ocurra
-export type ErrorContext = 'load' | 'order' | 'status' | 'payment' | 'cancel';
+export type ErrorContext = 'load' | 'order' | 'status' | 'payment' | 'cancel' | 'report';
 
 export interface ApiErrorInfo {
   status:   number | null;
@@ -48,11 +48,13 @@ export const describeApiError = (err: unknown, ctx: ErrorContext): ApiErrorInfo 
   if (status === 400) {
     message = ctx === 'payment'
       ? 'El monto no es válido para este método de pago.'
-      : 'Revisa los datos e intenta de nuevo.';
+      : ctx === 'report'
+        ? 'El periodo no es válido: "Desde" no puede ser posterior a "Hasta" y el máximo es de 366 días.'
+        : 'Revisa los datos e intenta de nuevo.';
   } else if (status === 401) {
     message = 'Tu sesión expiró. Vuelve a iniciar sesión.';
   } else if (status === 403) {
-    message = 'No tienes permiso para esta acción.';
+    message = ctx === 'report' ? 'Solo un administrador puede ver y exportar los reportes.' : 'No tienes permiso para esta acción.';
   } else if (status === 404) {
     message = ctx === 'load' ? 'No se encontró la información solicitada.' : 'La orden, mesa o producto ya no existe. Se actualizó la vista.';
   } else if (status === 409) {
