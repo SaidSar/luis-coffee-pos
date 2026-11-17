@@ -10,6 +10,7 @@ import categoryRoutes from './routes/categories.routes';
 import productRoutes  from './routes/products.routes';
 import orderRoutes    from './routes/orders.routes';
 import tableRoutes    from './routes/tables.routes';
+import reportRoutes   from './routes/reports.routes';
 
 const app = express();
 const httpServer = createServer(app);
@@ -30,7 +31,7 @@ app.use('/api/tables',     tableRoutes);
 // app.use('/api/deliveries', deliveryRoutes);
 // app.use('/api/employees',  employeeRoutes);
 // app.use('/api/expenses',   expenseRoutes);
-// app.use('/api/reports',    reportRoutes);
+app.use('/api/reports',    reportRoutes);
 
 app.get('/health', (_, res) =>
   res.json({ status: 'ok', app: 'Luis Coffee Break POS ☕' })
