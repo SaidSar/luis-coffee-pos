@@ -34,7 +34,7 @@ export default function Inventory() {
       {/* ── Top bar ─────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-espresso/50">
+          <p className="text-sm text-espresso/70">
             {products.length} producto{products.length !== 1 ? 's' : ''} registrado{products.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -48,7 +48,7 @@ export default function Inventory() {
           </button>
           <button
             onClick={() => setEditProduct(null)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-caramel hover:bg-espresso text-white text-sm font-semibold transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-caramel-dark hover:bg-espresso text-white text-sm font-semibold transition-colors"
           >
             <Plus size={15} />
             Nuevo producto
@@ -59,7 +59,7 @@ export default function Inventory() {
       {/* ── Categorías ──────────────────────────── */}
       <div className="bg-white rounded-2xl border border-caramel/10 p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Tag size={14} className="text-caramel" />
+          <Tag size={14} className="text-caramel-dark" />
           <span className="text-sm font-semibold text-espresso">Categorías</span>
         </div>
 
@@ -80,7 +80,7 @@ export default function Inventory() {
                 onClick={() => setActiveCat(cat.id)}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors
                   ${activeCat === cat.id
-                    ? 'bg-caramel text-white'
+                    ? 'bg-caramel-dark text-white'
                     : 'bg-cream text-espresso hover:bg-caramel/20'
                   }`}
               >
@@ -88,7 +88,8 @@ export default function Inventory() {
               </button>
               <button
                 onClick={() => deleteCategory.mutate(cat.id)}
-                className="text-espresso/20 hover:text-red-400 text-xs px-1 transition-colors"
+                aria-label={`Eliminar categoría ${cat.name}`}
+                className="text-espresso/70 hover:text-red-700 text-xs px-1 transition-colors"
                 title="Eliminar categoría"
               >
                 ×
@@ -103,13 +104,14 @@ export default function Inventory() {
             value={newCatName}
             onChange={e => setNewCatName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
+            aria-label="Nombre de la nueva categoría"
             placeholder="Nueva categoría..."
-            className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-caramel/20 bg-cream/40 text-espresso focus:outline-none focus:ring-1 focus:ring-caramel/30"
+            className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-espresso/50 bg-cream/40 text-espresso placeholder:text-espresso/70 focus:outline-none focus:ring-2 focus:ring-caramel-dark"
           />
           <button
             onClick={handleAddCategory}
             disabled={!newCatName.trim() || createCategory.isPending}
-            className="px-3 py-1.5 bg-espresso text-white text-xs rounded-lg hover:bg-caramel transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 bg-espresso text-white text-xs rounded-lg hover:bg-caramel-dark transition-colors disabled:opacity-50"
           >
             + Agregar
           </button>
@@ -119,13 +121,13 @@ export default function Inventory() {
       {/* ── Grid de productos ───────────────────── */}
       {loadingProducts ? (
         <div className="flex justify-center py-16">
-          <Loader2 size={32} className="text-caramel animate-spin" />
+          <Loader2 size={32} className="text-caramel-dark animate-spin" />
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-caramel/10 p-12 text-center">
           <p className="text-2xl mb-2">🍽️</p>
           <p className="font-semibold text-espresso">Sin productos</p>
-          <p className="text-sm text-espresso/40 mt-1">
+          <p className="text-sm text-espresso/70 mt-1">
             Crea tu primer producto o escanea el menú con IA
           </p>
         </div>

@@ -30,7 +30,7 @@ export default function ProductCard({ product, onEdit }: Props) {
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="flex flex-col items-center gap-1 text-espresso/20">
+          <div className="flex flex-col items-center gap-1 text-espresso/70">
             <ImageOff size={28} />
             <span className="text-xs">Sin imagen</span>
           </div>
@@ -41,12 +41,12 @@ export default function ProductCard({ product, onEdit }: Props) {
       <div className="p-4 flex flex-col gap-2 flex-1">
         <div>
           <p className="font-semibold text-espresso text-sm leading-tight">{product.name}</p>
-          <p className="text-xs text-caramel mt-0.5">{product.category.name}</p>
+          <p className="text-xs text-caramel-dark mt-0.5">{product.category.name}</p>
         </div>
 
         <div className="flex items-center justify-between">
           <span className="text-base font-bold text-espresso">{formatMXN(product.price)}</span>
-          <span className="text-xs text-espresso/40">costo {formatMXN(product.cost)}</span>
+          <span className="text-xs text-espresso/70">costo {formatMXN(product.cost)}</span>
         </div>
 
         {/* Stock badge */}
@@ -54,8 +54,8 @@ export default function ProductCard({ product, onEdit }: Props) {
           <span className={`
             text-xs font-medium px-2 py-0.5 rounded-full
             ${product.stock > 5  ? 'bg-green-100 text-green-700'  :
-              product.stock > 0  ? 'bg-amber/20 text-amber-700'   :
-                                   'bg-red-100 text-red-600'      }
+              product.stock > 0  ? 'bg-amber/20 text-espresso'   :
+                                   'bg-red-100 text-red-700'      }
           `}>
             Stock: {product.stock}
           </span>
@@ -70,7 +70,7 @@ export default function ProductCard({ product, onEdit }: Props) {
               text-xs font-medium px-3 py-1 rounded-full transition-colors
               ${product.isAvailable
                 ? 'bg-espresso text-white hover:bg-espresso/80'
-                : 'bg-espresso/10 text-espresso/50 hover:bg-espresso/20'
+                : 'bg-espresso/10 text-espresso/70 hover:bg-espresso/20'
               }
             `}
           >
@@ -80,14 +80,16 @@ export default function ProductCard({ product, onEdit }: Props) {
           <div className="flex gap-1">
             <button
               onClick={() => onEdit(product)}
-              className="p-1.5 rounded-lg text-espresso/40 hover:text-caramel hover:bg-caramel/10 transition-colors"
+              aria-label={`Editar ${product.name}`}
+              className="p-1.5 rounded-lg text-espresso/70 hover:text-caramel-dark hover:bg-caramel/10 transition-colors"
             >
               <Pencil size={14} />
             </button>
             <button
               onClick={handleDelete}
               disabled={remove.isPending}
-              className="p-1.5 rounded-lg text-espresso/40 hover:text-red-500 hover:bg-red-50 transition-colors"
+              aria-label={`Eliminar ${product.name}`}
+              className="p-1.5 rounded-lg text-espresso/70 hover:text-red-700 hover:bg-red-50 transition-colors"
             >
               <Trash2 size={14} />
             </button>

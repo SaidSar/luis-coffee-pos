@@ -18,10 +18,10 @@ export default function Login() {
         {/* Branding */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-espresso rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-md">
-            <span className="text-3xl">☕</span>
+            <span className="text-3xl" aria-hidden="true">☕</span>
           </div>
           <h1 className="text-2xl font-bold text-espresso">Luis Coffee Break</h1>
-          <p className="text-caramel text-sm mt-1">Sistema de Punto de Venta</p>
+          <p className="text-caramel-dark text-sm mt-1">Sistema de Punto de Venta</p>
         </div>
 
         {/* Card */}
@@ -30,10 +30,12 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-espresso mb-1.5">
+              <label htmlFor="login-email" className="block text-sm font-medium text-espresso mb-1.5">
                 Correo electrónico
               </label>
               <input
+                id="login-email"
+                autoComplete="email"
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -41,19 +43,21 @@ export default function Login() {
                 required
                 className="
                   w-full px-4 py-2.5 rounded-xl
-                  border border-caramel/20 bg-cream/40
-                  text-espresso placeholder-espresso/30
-                  focus:outline-none focus:ring-2 focus:ring-caramel/40 focus:border-caramel
+                  border border-espresso/50 bg-cream/40
+                  text-espresso placeholder:text-espresso/70
+                  focus:outline-none focus:ring-2 focus:ring-caramel-dark focus:border-caramel-dark
                   transition text-sm
                 "
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-espresso mb-1.5">
+              <label htmlFor="login-password" className="block text-sm font-medium text-espresso mb-1.5">
                 Contraseña
               </label>
               <input
+                id="login-password"
+                autoComplete="current-password"
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -61,9 +65,9 @@ export default function Login() {
                 required
                 className="
                   w-full px-4 py-2.5 rounded-xl
-                  border border-caramel/20 bg-cream/40
-                  text-espresso placeholder-espresso/30
-                  focus:outline-none focus:ring-2 focus:ring-caramel/40 focus:border-caramel
+                  border border-espresso/50 bg-cream/40
+                  text-espresso placeholder:text-espresso/70
+                  focus:outline-none focus:ring-2 focus:ring-caramel-dark focus:border-caramel-dark
                   transition text-sm
                 "
               />
@@ -71,7 +75,7 @@ export default function Login() {
 
             {/* Error */}
             {login.isError && (
-              <p className="text-red-500 text-sm text-center bg-red-50 rounded-lg py-2">
+              <p role="alert" className="text-red-700 text-sm text-center bg-red-50 rounded-lg py-2">
                 Correo o contraseña incorrectos
               </p>
             )}
@@ -82,7 +86,7 @@ export default function Login() {
               disabled={login.isPending}
               className="
                 w-full py-2.5 rounded-xl font-semibold text-sm
-                bg-caramel hover:bg-espresso text-white
+                bg-caramel-dark hover:bg-espresso text-white
                 transition-colors disabled:opacity-60 disabled:cursor-not-allowed
                 mt-2
               "
@@ -92,7 +96,7 @@ export default function Login() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-espresso/30 mt-6">
+        <p className="text-center text-xs text-espresso/70 mt-6">
           Luis Coffee Break POS · v0.1.0
         </p>
       </div>

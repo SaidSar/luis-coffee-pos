@@ -32,7 +32,7 @@ export default function Dashboard() {
             <h2 className="text-xl font-bold text-espresso">
               Bienvenido, {user?.name} 👋
             </h2>
-            <p className="text-caramel text-sm">
+            <p className="text-caramel-dark text-sm">
               {user?.role ? roleLabels[user.role] : ''} · Luis Coffee Break POS
             </p>
           </div>
@@ -48,7 +48,7 @@ export default function Dashboard() {
           >
             <div className={`w-8 h-8 ${stat.color} rounded-lg mb-3`} />
             <p className="text-2xl font-bold text-espresso">{stat.value}</p>
-            <p className="text-sm text-espresso/50 mt-1">{stat.label}</p>
+            <p className="text-sm text-espresso/70 mt-1">{stat.label}</p>
           </div>
         ))}
       </div>

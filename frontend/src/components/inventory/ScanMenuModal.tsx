@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useDialog } from '../../hooks/useDialog';
 import { X, ScanLine, Upload, Check, Loader2 } from 'lucide-react';
 import type { ScannedProduct } from '../../types';
 import { productService } from '../../services/productService';
@@ -14,9 +15,10 @@ interface Props {
 }
 
 export default function ScanMenuModal({ onClose }: Props) {
-  const fileRef          = useRef<HTMLInputElement>(null);
-  const [step, setStep]  = useState<'upload' | 'scanning' | 'review'>('upload');
-  const [image,  setImage]   = useState<File | null>(null);
+  const fileRef           = useRef<HTMLInputElement>(null);
+  const dialogRef = useDialog<HTMLDivElement>(onClose);
+  const [step, setStep]   = useState<'upload' | 'scanning' | 'review'>('upload');
+  const [image,   setImage]   = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [results, setResults] = useState<ScanItem[]>([]);
   const [importing, setImporting] = useState(false);
@@ -99,17 +101,25 @@ export default function ScanMenuModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-espresso/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="scan-modal-title"
+        tabIndex={-1}
+        className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto focus:outline-none"
+      >
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-caramel/10 sticky top-0 bg-white rounded-t-2xl">
           <div className="flex items-center gap-2">
-            <ScanLine size={20} className="text-caramel" />
-            <h2 className="font-bold text-espresso text-lg">Escanear menú con IA</h2>
+            <ScanLine size={20} className="text-caramel-dark" />
+            <h2 id="scan-modal-title" className="font-bold text-espresso text-lg">Escanear menú con IA</h2>
           </div>
           <button
             onClick={onClose}
-            className="text-espresso/40 hover:text-espresso transition-colors p-1"
+            aria-label="Cerrar"
+            className="text-espresso/70 hover:text-espresso transition-colors p-1"
           >
             <X size={20} />
           </button>
@@ -124,23 +134,25 @@ export default function ScanMenuModal({ onClose }: Props) {
                 Toma una foto del menú o lista de platillos. La IA extraerá nombre, precio y categoría automáticamente.
               </p>
 
-              <div
+              <button
+                type="button"
+                aria-label={preview ? 'Cambiar foto del menú' : 'Subir foto del menú'}
                 onClick={() => fileRef.current?.click()}
                 className="
-                  w-full h-44 rounded-xl border-2 border-dashed border-caramel/30
+                  w-full h-44 rounded-xl border-2 border-dashed border-espresso/50
                   flex items-center justify-center cursor-pointer
                   hover:border-caramel hover:bg-cream/40 transition-colors overflow-hidden
                 "
               >
                 {preview ? (
-                  <img src={preview} alt="menu" className="w-full h-full object-contain" />
+                  <img src={preview} alt="Vista previa del menú" className="w-full h-full object-contain" />
                 ) : (
-                  <div className="flex flex-col items-center gap-2 text-espresso/30">
+                  <span className="flex flex-col items-center gap-2 text-espresso/70">
                     <Upload size={32} />
                     <span className="text-sm">Subir foto del menú</span>
-                  </div>
+                  </span>
                 )}
-              </div>
+              </button>
               <input
                 ref={fileRef}
                 type="file"
@@ -152,7 +164,7 @@ export default function ScanMenuModal({ onClose }: Props) {
               <button
                 onClick={handleScan}
                 disabled={!image}
-                className="w-full py-3 bg-caramel hover:bg-espresso text-white rounded-xl font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full py-3 bg-caramel-dark hover:bg-espresso text-white rounded-xl font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <ScanLine size={16} />
                 Analizar con IA
@@ -163,9 +175,9 @@ export default function ScanMenuModal({ onClose }: Props) {
           {/* PASO 2: Scanning */}
           {step === 'scanning' && (
             <div className="flex flex-col items-center gap-4 py-10">
-              <Loader2 size={40} className="text-caramel animate-spin" />
+              <Loader2 size={40} className="text-caramel-dark animate-spin" />
               <p className="font-semibold text-espresso">Analizando el menú...</p>
-              <p className="text-sm text-espresso/50 text-center">
+              <p className="text-sm text-espresso/70 text-center">
                 La IA está extrayendo los platillos de la imagen
               </p>
             </div>
@@ -194,9 +206,13 @@ export default function ScanMenuModal({ onClose }: Props) {
                     {/* Checkbox */}
                     <button
                       onClick={() => toggleItem(i)}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={item.selected}
+                      aria-label={`Seleccionar ${item.name}`}
                       className={`
                         w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors
-                        ${item.selected ? 'bg-caramel border-caramel' : 'border-espresso/20'}
+                        ${item.selected ? 'bg-caramel-dark border-caramel-dark' : 'border-espresso/50'}
                       `}
                     >
                       {item.selected && <Check size={10} className="text-white" strokeWidth={3} />}
@@ -212,7 +228,7 @@ export default function ScanMenuModal({ onClose }: Props) {
                       </div>
 
                       {item.extras.length > 0 && (
-                        <p className="text-xs text-espresso/40 mt-0.5 truncate">
+                        <p className="text-xs text-espresso/70 mt-0.5 truncate">
                           Extras: {item.extras.join(', ')}
                         </p>
                       )}
@@ -222,7 +238,8 @@ export default function ScanMenuModal({ onClose }: Props) {
                         value={item.resolvedCategoryId}
                         onChange={e => setCategoryForItem(i, e.target.value)}
                         disabled={!item.selected}
-                        className="mt-1.5 w-full text-xs px-2 py-1.5 rounded-lg border border-caramel/20 bg-white text-espresso focus:outline-none focus:ring-1 focus:ring-caramel/30"
+                        aria-label={`Categoría de ${item.name}`}
+                        className="mt-1.5 w-full text-xs px-2 py-1.5 rounded-lg border border-espresso/50 bg-white text-espresso focus:outline-none focus:ring-2 focus:ring-caramel-dark"
                       >
                         <option value="">Sin categoría</option>
                         {categories.map(c => (
@@ -245,7 +262,7 @@ export default function ScanMenuModal({ onClose }: Props) {
                 <button
                   onClick={handleImport}
                   disabled={importing || selectedCount === 0}
-                  className="flex-1 py-2.5 rounded-xl bg-caramel hover:bg-espresso text-white text-sm font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  className="flex-1 py-2.5 rounded-xl bg-caramel-dark hover:bg-espresso text-white text-sm font-semibold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                 >
                   {importing
                     ? <><Loader2 size={14} className="animate-spin" /> Importando...</>

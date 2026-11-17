@@ -25,7 +25,7 @@ function ProtectedPage({ children }: { children: React.ReactNode }) {
 const Soon = ({ name }: { name: string }) => (
   <div className="bg-white rounded-2xl border border-caramel/10 p-10 text-center">
     <p className="text-2xl font-bold text-espresso">{name}</p>
-    <p className="text-caramel mt-2 text-sm">Módulo en construcción 🔨</p>
+    <p className="text-caramel-dark mt-2 text-sm">Módulo en construcción 🔨</p>
   </div>
 );
 

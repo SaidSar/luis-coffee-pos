@@ -36,7 +36,8 @@ export default function Header({ onMenuClick }: Props) {
       <div className="flex items-center gap-4">
         <button
           onClick={onMenuClick}
-          className="lg:hidden text-espresso/50 hover:text-espresso transition-colors"
+          aria-label="Abrir menú"
+          className="lg:hidden text-espresso/70 hover:text-espresso transition-colors"
         >
           <Menu size={22} />
         </button>
@@ -47,7 +48,7 @@ export default function Header({ onMenuClick }: Props) {
       <div className="flex items-center gap-3">
         <div className="text-right hidden sm:block">
           <p className="text-sm font-semibold text-espresso leading-tight">{user?.name}</p>
-          <p className="text-xs text-caramel">
+          <p className="text-xs text-caramel-dark">
             {user?.role ? roleLabels[user.role] : ''}
           </p>
         </div>

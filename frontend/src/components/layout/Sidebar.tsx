@@ -40,8 +40,8 @@ export default function Sidebar({ isOpen, onClose }: Props) {
   return (
     <aside className={`
       fixed inset-y-0 left-0 z-30 w-60 bg-espresso
-      flex flex-col transition-transform duration-300
-      ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      flex flex-col transition-[translate,visibility] duration-300
+      ${isOpen ? 'translate-x-0' : '-translate-x-full invisible lg:visible'}
       lg:translate-x-0 lg:static lg:z-auto
     `}>
 
@@ -53,20 +53,21 @@ export default function Sidebar({ isOpen, onClose }: Props) {
           </div>
           <div>
             <p className="text-white font-semibold text-sm leading-tight">Luis Coffee</p>
-            <p className="text-white/40 text-xs">Break POS</p>
+            <p className="text-white/60 text-xs">Break POS</p>
           </div>
         </div>
         {/* Cerrar en móvil */}
         <button
           onClick={onClose}
-          className="lg:hidden text-white/50 hover:text-white transition-colors p-1"
+          aria-label="Cerrar menú"
+          className="lg:hidden text-white/60 hover:text-white transition-colors p-1"
         >
           <X size={18} />
         </button>
       </div>
 
       {/* ── Nav ──────────────────────────────── */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <nav aria-label="Navegación principal" className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {visibleItems.map((item) => (
           <NavLink
             key={item.path}
@@ -76,7 +77,7 @@ export default function Sidebar({ isOpen, onClose }: Props) {
               flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
               transition-colors
               ${isActive
-                ? 'bg-caramel text-white'
+                ? 'bg-caramel text-espresso'
                 : 'text-white/60 hover:text-white hover:bg-white/10'
               }
             `}
@@ -97,14 +98,14 @@ export default function Sidebar({ isOpen, onClose }: Props) {
           </div>
           <div className="overflow-hidden">
             <p className="text-white text-sm font-medium truncate">{user?.name}</p>
-            <p className="text-white/40 text-xs">{user?.role}</p>
+            <p className="text-white/60 text-xs">{user?.role}</p>
           </div>
         </div>
         <button
           onClick={logout}
           className="
             w-full flex items-center gap-2 px-3 py-2
-            text-white/50 hover:text-white/90 hover:bg-white/10
+            text-white/60 hover:text-white/90 hover:bg-white/10
             rounded-lg text-xs font-medium transition-colors
           "
         >
