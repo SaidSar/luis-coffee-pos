@@ -49,17 +49,19 @@ export default function ProductCard({ product, onEdit }: Props) {
           <span className="text-xs text-espresso/70">costo {formatMXN(product.cost)}</span>
         </div>
 
-        {/* Stock badge */}
-        <div className="flex items-center gap-2">
-          <span className={`
-            text-xs font-medium px-2 py-0.5 rounded-full
-            ${product.stock > 5  ? 'bg-green-100 text-green-700'  :
-              product.stock > 0  ? 'bg-amber/20 text-espresso'   :
-                                   'bg-red-100 text-red-700'      }
-          `}>
-            Stock: {product.stock}
-          </span>
-        </div>
+        {/* Stock badge: solo para productos con control de stock */}
+        {product.trackStock && (
+          <div className="flex items-center gap-2">
+            <span className={`
+              text-xs font-medium px-2 py-0.5 rounded-full
+              ${product.stock > 5  ? 'bg-green-100 text-green-700'  :
+                product.stock > 0  ? 'bg-amber/20 text-espresso'   :
+                                     'bg-red-100 text-red-700'      }
+            `}>
+              Stock: {product.stock}
+            </span>
+          </div>
+        )}
 
         {/* Footer: toggle + acciones */}
         <div className="flex items-center justify-between mt-auto pt-2 border-t border-caramel/10">

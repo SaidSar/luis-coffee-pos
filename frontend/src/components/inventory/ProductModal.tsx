@@ -16,6 +16,7 @@ interface FormState {
   price:       string;
   cost:        string;
   stock:       string;
+  trackStock:  boolean;
   categoryId:  string;
   isAvailable: boolean;
 }
@@ -33,6 +34,7 @@ export default function ProductModal({ product, categories, onClose }: Props) {
     price:       product?.price?.toString() ?? '',
     cost:        product?.cost?.toString()  ?? '',
     stock:       product?.stock?.toString() ?? '0',
+    trackStock:  product?.trackStock    ?? false,
     categoryId:  product?.categoryId    ?? '',
     isAvailable: product?.isAvailable   ?? true,
   });
@@ -185,19 +187,43 @@ export default function ProductModal({ product, categories, onClose }: Props) {
             </div>
           </div>
 
-          {/* Stock + Categoría */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Controlar stock */}
+          <div className="flex items-start gap-3">
+            <input
+              id="product-track-stock"
+              type="checkbox"
+              checked={form.trackStock}
+              onChange={e => setForm(p => ({ ...p, trackStock: e.target.checked }))}
+              aria-describedby="product-track-stock-help"
+              className="w-4 h-4 mt-0.5 accent-caramel-dark"
+            />
             <div>
-              <label htmlFor="product-stock" className="block text-sm font-medium text-espresso mb-1">Stock</label>
-              <input id="product-stock"
-                type="number"
-                min="0"
-                value={form.stock}
-                onChange={set('stock')}
-                className="w-full px-4 py-2.5 rounded-xl border border-espresso/50 bg-cream/30 text-espresso text-sm placeholder:text-espresso/70 focus:outline-none focus:ring-2 focus:ring-caramel-dark"
-              />
+              <label htmlFor="product-track-stock" className="text-sm font-medium text-espresso">
+                Controlar stock
+              </label>
+              <p id="product-track-stock-help" className="text-xs text-espresso/70">
+                Si está activo, no se podrá vender sin existencias.
+              </p>
             </div>
-            <div>
+          </div>
+
+          {/* Stock (solo si se controla) + Categoría */}
+          <div className="grid grid-cols-2 gap-3">
+            {form.trackStock && (
+              <div>
+                <label htmlFor="product-stock" className="block text-sm font-medium text-espresso mb-1">Stock *</label>
+                <input id="product-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  required
+                  value={form.stock}
+                  onChange={set('stock')}
+                  className="w-full px-4 py-2.5 rounded-xl border border-espresso/50 bg-cream/30 text-espresso text-sm placeholder:text-espresso/70 focus:outline-none focus:ring-2 focus:ring-caramel-dark"
+                />
+              </div>
+            )}
+            <div className={form.trackStock ? '' : 'col-span-2'}>
               <label htmlFor="product-category" className="block text-sm font-medium text-espresso mb-1">Categoría *</label>
               <select id="product-category"
                 value={form.categoryId}

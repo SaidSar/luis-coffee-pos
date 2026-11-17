@@ -27,6 +27,7 @@ export interface Product {
   price:       string | number;
   cost:        string | number;
   stock:       number;
+  trackStock:  boolean;  // si es false, el stock no se valida ni bloquea la venta
   imageUrl:    string | null;
   isAvailable: boolean;
   categoryId:  string;
