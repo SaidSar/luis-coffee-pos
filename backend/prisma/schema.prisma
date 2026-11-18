@@ -24,6 +24,7 @@ enum TableStatus {
   OCCUPIED
   RESERVED
   CLEANING
+  MERGED // mesa secundaria unida a una principal (la orden vive en la principal)
 }
 
 enum OrderType {
@@ -71,12 +72,18 @@ model User {
 }
 
 model Table {
-  id       String      @id @default(uuid())
-  number   Int         @unique
-  capacity Int
-  status   TableStatus @default(AVAILABLE)
+  id           String      @id @default(uuid())
+  number       Int         @unique
+  capacity     Int
+  status       TableStatus @default(AVAILABLE)
+  active       Boolean     @default(true) // false = desactivada (no aparece en el POS)
+  mergedIntoId String?                    // mesa principal del grupo (solo en secundarias)
 
-  orders Order[]
+  mergedInto   Table?  @relation("TableMerge", fields: [mergedIntoId], references: [id])
+  mergedTables Table[] @relation("TableMerge")
+  orders       Order[]
+
+  @@index([mergedIntoId])
 }
 
 model Category {

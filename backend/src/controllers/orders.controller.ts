@@ -236,13 +236,13 @@ export const updateStatus = async (req: Request, res: Response) => {
         },
         include: orderInclude,
       });
-      const table = cancel ? await freeTableIfIdle(tx, locked.tableId) : null;
-      return { order, table };
+      const tables = cancel ? await freeTableIfIdle(tx, locked.tableId) : [];
+      return { order, tables };
     }, TX_OPTS);
 
     const view = toOrderView(result.order);
     emit('order:updated', view);
-    if (result.table) emit('table:updated', result.table);
+    for (const t of result.tables) emit('table:updated', t);
     if (status === 'CANCELLED' && view.delivery) emit('delivery:updated', deliveryEvent(view));
     res.json(view);
   } catch (err) {
@@ -292,13 +292,13 @@ export const payOrder = async (req: Request, res: Response) => {
       // el FOR UPDATE de lockOrder y la restricción única de Payment.orderId
       await tx.payment.create({ data: { orderId, method, amount: total, changeGiven } });
       const order = await tx.order.update({ where: { id: orderId }, data: { status: 'PAID' }, include: orderInclude });
-      const table = await freeTableIfIdle(tx, locked.tableId);
-      return { order, table };
+      const tables = await freeTableIfIdle(tx, locked.tableId);
+      return { order, tables };
     }, TX_OPTS);
 
     const view = toOrderView(result.order);
     emit('order:paid', view);
-    if (result.table) emit('table:updated', result.table);
+    for (const t of result.tables) emit('table:updated', t);
     if (view.delivery) emit('delivery:updated', deliveryEvent(view));
     res.status(201).json(view);
   } catch (err) {

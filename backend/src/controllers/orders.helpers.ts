@@ -212,18 +212,28 @@ export const trackedProducts = (tx: Tx, ids: string[]) =>
 // Marca la mesa OCCUPIED y devuelve su orden activa en UNA consulta. El UPDATE bloquea la fila
 // hasta el commit, así que dos pedidos simultáneos a la misma mesa se serializan.
 // Si ya tenía orden activa, la mesa ya estaba OCCUPIED: el estado no cambia en la práctica.
+// Vista de una mesa para eventos table:updated
+export interface TableEvent { id: string; number: number; capacity: number; status: string; active: boolean; mergedIntoId: string | null }
+
+// Ocupa la mesa para una orden en mesa. Bloquea la fila: una mesa desactivada o unida a otra (secundaria) no admite órdenes.
 export const occupyTable = async (tx: Tx, tableId: string) => {
-  const rows = await tx.$queryRaw<{
-    id: string; number: number; capacity: number; status: string; activeOrderId: string | null;
-  }[]>`
+  const [cur] = await tx.$queryRaw<{ active: boolean; mergedIntoId: string | null; principal: number | null }[]>`
+    SELECT t.active, t."mergedIntoId", p.number AS principal
+      FROM "Table" t LEFT JOIN "Table" p ON p.id = t."mergedIntoId"
+     WHERE t.id = ${tableId}
+       FOR UPDATE OF t`;
+  if (!cur) throw new HttpError(404, 'Mesa no encontrada');
+  if (!cur.active) throw new HttpError(409, 'La mesa está desactivada');
+  if (cur.mergedIntoId) throw new HttpError(409, `La mesa está unida a la mesa ${cur.principal}: usa la mesa principal`);
+
+  const rows = await tx.$queryRaw<(TableEvent & { activeOrderId: string | null })[]>`
     UPDATE "Table" t
        SET status = 'OCCUPIED'
      WHERE t.id = ${tableId}
- RETURNING t.id, t.number, t.capacity, t.status::text AS status,
+ RETURNING t.id, t.number, t.capacity, t.status::text AS status, t.active, t."mergedIntoId",
            (SELECT o.id FROM "Order" o
              WHERE o."tableId" = t.id AND o.status IN ('OPEN', 'IN_KITCHEN', 'SERVED')
              ORDER BY o."createdAt" LIMIT 1) AS "activeOrderId"`;
-  if (rows.length === 0) throw new HttpError(404, 'Mesa no encontrada');
   const { activeOrderId, ...table } = rows[0];
   return { table, activeOrderId };
 };
@@ -283,17 +293,25 @@ export const decrementStock = async (
 
 // Libera la mesa (UN solo UPDATE) si estaba OCCUPIED y ya no le quedan órdenes activas.
 // Devuelve la mesa con la misma forma que Prisma, o null si no cambió.
-export const freeTableIfIdle = async (tx: Tx, tableId: string | null) => {
-  if (!tableId) return null;
-  const rows = await tx.$queryRaw<{ id: string; number: number; capacity: number; status: string }[]>`
+// Libera la mesa si ya no tiene órdenes activas y deshace su grupo (secundarias → AVAILABLE, sin unión),
+// en la misma transacción. Devuelve todas las mesas afectadas para emitir table:updated tras el commit.
+export const freeTableIfIdle = async (tx: Tx, tableId: string | null): Promise<TableEvent[]> => {
+  if (!tableId) return [];
+  const main = await tx.$queryRaw<TableEvent[]>`
     UPDATE "Table" t
        SET status = 'AVAILABLE'
      WHERE t.id = ${tableId}
        AND t.status = 'OCCUPIED'
        AND NOT EXISTS (SELECT 1 FROM "Order" o
                         WHERE o."tableId" = t.id AND o.status IN ('OPEN', 'IN_KITCHEN', 'SERVED'))
- RETURNING t.id, t.number, t.capacity, t.status::text AS status`;
-  return rows[0] ?? null;
+ RETURNING t.id, t.number, t.capacity, t.status::text AS status, t.active, t."mergedIntoId"`;
+  if (main.length === 0) return [];
+  const secondaries = await tx.$queryRaw<TableEvent[]>`
+    UPDATE "Table" t
+       SET status = 'AVAILABLE', "mergedIntoId" = NULL
+     WHERE t."mergedIntoId" = ${tableId}
+ RETURNING t.id, t.number, t.capacity, t.status::text AS status, t.active, t."mergedIntoId"`;
+  return [...main, ...secondaries];
 };
 
 export const assertActive = (status: OrderStatus) => {
