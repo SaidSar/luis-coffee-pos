@@ -90,9 +90,26 @@ const money = z
   .transform((v) => new Prisma.Decimal(String(v)))
   .refine((d) => d.gt(0) && d.lt(10_000_000), { message: 'Monto fuera de rango' });
 
-export const paymentSchema = z.object({
+export const paymentLineSchema = z.object({
   method:         z.enum(['CASH', 'CARD', 'TRANSFER']),
-  amountReceived: money,
+  amount:         money,
+  amountReceived: money.optional(), // solo efectivo
+});
+const paymentLines = z.array(paymentLineSchema).min(1, { message: 'Indica al menos un pago' }).max(5, { message: 'Máximo 5 pagos por cuenta' });
+
+// Cobrar todo (POST /:id/payment): cuerpo anterior {method, amountReceived} o nuevo {payments:[...]}
+export const paymentSchema = z.union([
+  z.object({ payments: paymentLines }).strict(),
+  z.object({ method: z.enum(['CASH', 'CARD', 'TRANSFER']), amountReceived: money }),
+], { message: 'Indica method y amountReceived, o payments' });
+
+// Cobrar una cuenta (POST /:id/splits/pay)
+export const splitPaySchema = z.object({
+  label:    z.string().trim().max(60, { message: 'Máximo 60 caracteres' }).optional().transform((s) => (s ? s : undefined)),
+  items:    z.array(z.object({ orderItemId: id, quantity: z.number().int().min(1, { message: 'La cantidad debe ser mayor a 0' }).max(99) }))
+    .min(1, { message: 'Elige al menos un producto' }).max(100)
+    .refine((a) => new Set(a.map((x) => x.orderItemId)).size === a.length, { message: 'Hay productos repetidos' }),
+  payments: paymentLines,
 });
 
 export const listQuerySchema = z.object({
@@ -108,12 +125,16 @@ export const listQuerySchema = z.object({
 // Items en orden cronológico (rondas); desempate por id dentro de una misma ronda.
 export const orderInclude = {
   items:   {
-    include: { product: { select: { id: true, name: true } } },
+    include: { product: { select: { id: true, name: true } }, splitItems: { select: { quantity: true } } },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   },
   table:    { select: { id: true, number: true } },
   user:     { select: { id: true, name: true } },
-  payment:  true,
+  payments: { orderBy: [{ paidAt: 'asc' }, { id: 'asc' }] },
+  splits:   {
+    include: { items: { select: { orderItemId: true, quantity: true } }, payments: { orderBy: { id: 'asc' } } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  },
   delivery: true,
 } satisfies Prisma.OrderInclude;
 
@@ -125,25 +146,42 @@ export const orderTotal = (items: { unitPrice: Prisma.Decimal; quantity: number 
 
 // Totales calculados en el servidor con Decimal y enviados como string con 2 decimales.
 // total = productos + cargo de envío (si es entrega a domicilio)
+// Vista de la orden: totales, lo cobrado por cuentas y lo que falta (todo calculado en el servidor).
+// "payment" se conserva por compatibilidad: último pago registrado (o null).
 export const toOrderView = (order: OrderWithRelations) => {
   const itemsTotal = orderTotal(order.items);
   const fee = order.delivery?.deliveryFee ?? new Prisma.Decimal(0);
+  const total = itemsTotal.add(fee);
+  const paidAmount = order.payments.reduce((a, p) => a.add(p.amount), new Prisma.Decimal(0));
+  const { splits, payments, items, ...rest } = order;
   return {
-    ...order,
-    items:      order.items.map((i) => ({ ...i, lineTotal: i.unitPrice.mul(i.quantity).toFixed(2) })),
+    ...rest,
+    items: items.map(({ splitItems, ...i }) => {
+      const assigned = splitItems.reduce((a, x) => a + x.quantity, 0);
+      return { ...i, lineTotal: i.unitPrice.mul(i.quantity).toFixed(2), paidQuantity: assigned, remaining: i.quantity - assigned };
+    }),
     itemsTotal: itemsTotal.toFixed(2),
-    total:      itemsTotal.add(fee).toFixed(2),
+    total:      total.toFixed(2),
+    paidAmount: paidAmount.toFixed(2),
+    balance:    order.status === 'CANCELLED' ? '0.00' : total.sub(paidAmount).toFixed(2),
+    paid:       order.status === 'PAID',
+    payments,
+    payment:    payments[payments.length - 1] ?? null,
+    splits:     splits.map((sp, idx) => ({
+      id: sp.id, label: sp.label, number: idx + 1, amount: sp.amount.toFixed(2), createdAt: sp.createdAt,
+      items: sp.items, payments: sp.payments,
+    })),
   };
 };
 
 // Payload del evento delivery:updated (el cliente solo lo usa para refrescar; datos mínimos)
-export const deliveryEvent = (o: { id: string; ticketNumber: number; status: OrderStatus; payment: unknown; delivery: { id: string; status: string } | null }) => ({
+export const deliveryEvent = (o: { id: string; ticketNumber: number; status: OrderStatus; delivery: { id: string; status: string } | null }) => ({
   id:           o.delivery?.id,
   orderId:      o.id,
   ticketNumber: o.ticketNumber,
   status:       o.delivery?.status,
   orderStatus:  o.status,
-  paid:         !!o.payment,
+  paid:         o.status === 'PAID',
 });
 
 // ── Reglas compartidas ──────────────────────────────────────
@@ -252,6 +290,7 @@ export const lockOrder = async (tx: Tx, orderId: string): Promise<LockedOrder> =
   const rows = await tx.$queryRaw<LockedOrder[]>`
     SELECT o.status::text AS status,
            o."tableId",
+           -- hay algún pago (aunque la orden no esté saldada): impide cancelar
            EXISTS (SELECT 1 FROM "Payment" p WHERE p."orderId" = o.id) AS paid,
            (SELECT count(*)::int FROM "OrderItem" i WHERE i."orderId" = o.id) AS "itemCount",
            d.id AS "deliveryId",

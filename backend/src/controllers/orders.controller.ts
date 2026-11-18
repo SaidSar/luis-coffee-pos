@@ -4,9 +4,9 @@ import { prisma } from '../lib/prisma';
 import { HttpError, parse, sendError } from '../lib/http-error';
 import { emit } from '../services/socket.service';
 import {
-  TX_OPTS, orderInclude, toOrderView, orderTotal,
-  createOrderSchema, addItemsSchema, updateItemSchema, statusSchema, paymentSchema, listQuerySchema,
-  resolveItems, occupyTable, lockOrder, freeTableIfIdle, assertActive, assertStock, trackedProducts, decrementStock,
+  TX_OPTS, orderInclude, toOrderView,
+  createOrderSchema, addItemsSchema, updateItemSchema, statusSchema, listQuerySchema,
+  resolveItems, occupyTable, lockOrder, freeTableIfIdle, assertActive, assertStock, trackedProducts,
   deliveryEvent,
 } from './orders.helpers';
 
@@ -145,10 +145,12 @@ const editableItem = async (tx: Prisma.TransactionClient, orderId: string, itemI
   }
   const item = await tx.orderItem.findFirst({
     where:  { id: itemId, orderId },
-    select: { productId: true, quantity: true },
+    select: { productId: true, quantity: true, splitItems: { select: { quantity: true } } },
   });
   if (!item) throw new HttpError(404, 'Producto de la orden no encontrado');
-  return { count: locked.itemCount, item };
+  // Unidades ya cobradas en una cuenta: no se pueden quitar
+  const assigned = item.splitItems.reduce((a, x) => a + x.quantity, 0);
+  return { count: locked.itemCount, item, assigned };
 };
 
 // ── PATCH /api/orders/:id/items/:itemId ─────────────────────
@@ -159,7 +161,10 @@ export const updateItem = async (req: Request, res: Response) => {
     const data    = parse(updateItemSchema, req.body);
 
     const order = await prisma.$transaction(async (tx) => {
-      const { item } = await editableItem(tx, orderId, itemId);
+      const { item, assigned } = await editableItem(tx, orderId, itemId);
+      if (data.quantity !== undefined && data.quantity < assigned) {
+        throw new HttpError(409, `Ya se cobraron ${assigned} unidades de este producto; no se puede bajar de ahí`);
+      }
       // Si sube la cantidad, valida stock solo por la diferencia (lo actual ya cuenta en la orden)
       if (data.quantity && data.quantity > item.quantity) {
         const tracked = await trackedProducts(tx, [item.productId]);
@@ -187,7 +192,8 @@ export const deleteItem = async (req: Request, res: Response) => {
     const itemId  = String(req.params.itemId);
 
     const order = await prisma.$transaction(async (tx) => {
-      const { count } = await editableItem(tx, orderId, itemId);
+      const { count, assigned } = await editableItem(tx, orderId, itemId);
+      if (assigned > 0) throw new HttpError(409, 'Este producto ya tiene unidades cobradas; no se puede eliminar');
       if (count <= 1) {
         throw new HttpError(409, 'La orden debe tener al menos un producto; cancélala si ya no se necesita');
       }
@@ -250,62 +256,5 @@ export const updateStatus = async (req: Request, res: Response) => {
   }
 };
 
-// ── POST /api/orders/:id/payment ────────────────────────────
-// Todo en una transacción: valida monto, descuenta stock, crea Payment, orden → PAID y libera mesa.
-export const payOrder = async (req: Request, res: Response) => {
-  try {
-    const orderId                    = String(req.params.id);
-    const { method, amountReceived } = parse(paymentSchema, req.body);
+// El cobro (POST /:id/payment y /:id/splits/pay) vive en payments.controller.ts
 
-    const result = await prisma.$transaction(async (tx) => {
-      const locked = await lockOrder(tx, orderId);
-
-      if (locked.paid || locked.status === 'PAID') throw new HttpError(409, 'La orden ya fue pagada');
-      if (locked.status === 'CANCELLED')           throw new HttpError(409, 'La orden está cancelada');
-      if (locked.itemCount === 0)                  throw new HttpError(409, 'La orden no tiene productos');
-
-      const items = await tx.orderItem.findMany({
-        where:  { orderId },
-        select: {
-          productId: true, quantity: true, unitPrice: true,
-          product:   { select: { name: true, trackStock: true } },
-        },
-      });
-
-      // Total = productos + cargo de envío (0 si no es a domicilio); mismas reglas de cobro
-      const total = orderTotal(items).add(locked.deliveryFee);
-      let changeGiven: Prisma.Decimal | null = null;
-
-      if (method === 'CASH') {
-        if (amountReceived.lt(total)) {
-          throw new HttpError(400, 'El monto recibido es menor al total', { total: total.toFixed(2) });
-        }
-        changeGiven = amountReceived.sub(total);
-      } else if (!amountReceived.eq(total)) {
-        throw new HttpError(400, 'Con tarjeta o transferencia el monto debe ser igual al total', { total: total.toFixed(2) });
-      }
-
-      // Un solo UPDATE condicional para los productos con trackStock; si falla, se revierte todo
-      await decrementStock(tx, items);
-
-      // INSERT directo (el create anidado añade un SELECT previo); la unicidad la garantizan
-      // el FOR UPDATE de lockOrder y la restricción única de Payment.orderId
-      await tx.payment.create({ data: { orderId, method, amount: total, changeGiven } });
-      const order = await tx.order.update({ where: { id: orderId }, data: { status: 'PAID' }, include: orderInclude });
-      const tables = await freeTableIfIdle(tx, locked.tableId);
-      return { order, tables };
-    }, TX_OPTS);
-
-    const view = toOrderView(result.order);
-    emit('order:paid', view);
-    for (const t of result.tables) emit('table:updated', t);
-    if (view.delivery) emit('delivery:updated', deliveryEvent(view));
-    res.status(201).json(view);
-  } catch (err) {
-    // Carrera entre dos cobros simultáneos: la restricción única de Payment.orderId lo detiene
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      return sendError(res, new HttpError(409, 'La orden ya fue pagada'), 'payOrder');
-    }
-    sendError(res, err, 'payOrder');
-  }
-};

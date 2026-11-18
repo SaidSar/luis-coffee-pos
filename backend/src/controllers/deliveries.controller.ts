@@ -54,7 +54,7 @@ const toView = (d: DeliveryWithOrder) => {
       customerName: order.customerName,
       itemsTotal:   order.itemsTotal,
       total:        order.total,
-      paid:         !!order.payment,
+      paid:         order.status === 'PAID',
       paymentMethod: order.payment?.method ?? null,
       items:        order.items.map((i) => ({ id: i.id, quantity: i.quantity, name: i.product.name })),
     },
