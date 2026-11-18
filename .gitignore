@@ -4,3 +4,16 @@ dist/
 .DS_Store
 uploads/
 *.log
+
+# Carpetas locales de herramientas y temporales
+.claude/
+backend/.claude/
+*.bundle
+*.xlsx
+scratch/
+*.tmp
+
+# Variables de entorno: solo se versionan los ejemplos
+.env.*
+!.env.example
+!.env.production.example
