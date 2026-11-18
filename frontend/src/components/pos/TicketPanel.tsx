@@ -4,6 +4,7 @@ import { usePosDraftStore, selectDraftTotal, selectDraftCount } from '../../stor
 import type { Order } from '../../types/pos';
 import type { ApiErrorInfo } from '../../lib/apiError';
 import { formatMXN } from '../../types';
+import { useMediaQuery, LG_QUERY } from '../../hooks/useMediaQuery';
 import { btnPrimary, focusRing, inputBase, toCents, centsToMXN } from './posUi';
 import DeliveryForm from './DeliveryForm';
 import type { DeliveryErrors, DeliveryField } from './deliveryValidation';
@@ -37,6 +38,8 @@ export default function TicketPanel({
 
   // Panel inferior colapsable en móvil (en lg siempre visible)
   const [open, setOpen] = useState(false);
+  // En lg el detalle tiene su propio scroll: solo ahí es una región enfocable con teclado
+  const isLg = useMediaQuery(LG_QUERY);
 
   const deliveryFeeDraft = usePosDraftStore((s) => s.delivery.deliveryFee);
 
@@ -51,11 +54,11 @@ export default function TicketPanel({
     <aside
       aria-labelledby="pos-ticket-title"
       className={`
-        fixed inset-x-0 bottom-0 z-20 flex flex-col max-h-[85vh] bg-white border-t border-espresso/20
+        fixed inset-x-0 bottom-0 z-20 flex flex-col max-h-[85dvh] bg-white border-t border-espresso/20
         rounded-t-2xl shadow-[0_-4px_16px_rgba(44,24,16,0.12)]
         transition-[translate] duration-300
         ${open ? 'translate-y-0' : 'translate-y-[calc(100%-4rem)]'}
-        lg:static lg:z-auto lg:max-h-none lg:translate-y-0 lg:rounded-2xl lg:border lg:border-caramel/10 lg:shadow-none
+        lg:static lg:z-auto lg:max-h-none lg:h-full lg:min-h-0 lg:translate-y-0 lg:rounded-2xl lg:border lg:border-caramel/10 lg:shadow-none
       `}
     >
       {/* Barra de apertura (solo móvil) */}
@@ -81,7 +84,8 @@ export default function TicketPanel({
       <div
         id="pos-ticket-body"
         className={`
-          flex flex-col gap-3 overflow-y-auto px-4 pb-4 lg:pt-4
+          flex flex-col gap-3 overflow-y-auto overscroll-contain px-4 pb-4 lg:pt-4
+          lg:flex-1 lg:min-h-0 lg:overflow-hidden lg:pb-0
           transition-[visibility] duration-300 ${open ? 'visible' : 'invisible'} lg:visible
         `}
       >
@@ -93,8 +97,13 @@ export default function TicketPanel({
           <p className="text-sm text-espresso/70">Selecciona una mesa, "Para llevar" o "A domicilio" para empezar.</p>
         )}
 
-        {statusBar}
-
+        {/* Detalle: en lg se desplaza solo; encabezado y pie quedan fijos */}
+        <div
+          role={isLg ? 'region' : undefined}
+          aria-label={isLg ? 'Detalle del ticket' : undefined}
+          tabIndex={isLg ? 0 : undefined}
+          className={`flex flex-col gap-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:-mx-1 lg:px-1 lg:pb-2 rounded-lg ${focusRing}`}
+        >
         {orderLoading && (
           <p role="status" className="flex items-center gap-2 text-sm text-espresso/70">
             <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Cargando orden...
@@ -201,9 +210,13 @@ export default function TicketPanel({
           </div>
         )}
 
+        </div>
+
+        {/* Pie fijo: total y acciones siempre visibles */}
+        <div className="flex flex-col gap-3 lg:shrink-0 lg:border-t lg:border-espresso/20 lg:py-3">
         {/* Totales: el oficial es el del servidor; el borrador es estimado */}
         {contextLabel && (
-          <dl className="border-t border-espresso/20 pt-3 text-sm text-espresso space-y-1">
+          <dl className="border-t border-espresso/20 pt-3 lg:border-t-0 lg:pt-0 text-sm text-espresso space-y-1">
             {order?.delivery && (
               <>
                 <div className="flex justify-between"><dt>Productos</dt><dd>{formatMXN(order.itemsTotal)}</dd></div>
@@ -252,6 +265,9 @@ export default function TicketPanel({
             {sending ? 'Enviando...' : 'Enviar a cocina'}
           </button>
         )}
+
+        {statusBar}
+        </div>
       </div>
     </aside>
   );

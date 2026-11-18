@@ -223,10 +223,11 @@ export default function POS() {
   const newMode = !selectedTable && (takeoutMode || deliveryMode) ? orderType as 'TAKEOUT' | 'DELIVERY' : null;
 
   return (
-    <div className="pb-20 lg:pb-0 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+    // lg+: altura fija (viewport dinámico − header 4rem − padding del main 3rem) y un scroll por panel
+    <div className="pb-20 lg:pb-0 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[minmax(0,1fr)] lg:h-[calc(100dvh-7rem)] lg:min-h-0 lg:overflow-hidden">
       <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
 
-      <div className="flex flex-col gap-4 min-w-0">
+      <div className="flex flex-col gap-4 min-w-0 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:p-1 lg:-m-1">
         <CashClosedNotice variant="banner" />
         <TableGrid
           tables={tables.data}
@@ -246,7 +247,7 @@ export default function POS() {
         <ProductPicker disabled={!canEdit} onAdd={handleAdd} />
       </div>
 
-      <div className="lg:sticky lg:top-0">
+      <div className="lg:min-h-0 lg:h-full">
         <TicketPanel
           contextLabel={contextLabel}
           order={currentOrder}

@@ -14,7 +14,7 @@ export default function MainLayout({ children }: Props) {
   useRealtime();
 
   return (
-    <div className="flex h-screen bg-cream font-sans overflow-hidden">
+    <div className="flex h-dvh bg-cream font-sans overflow-hidden">
 
       {/* Sidebar */}
       <Sidebar

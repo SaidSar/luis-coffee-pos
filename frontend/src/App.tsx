@@ -2,15 +2,25 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import MainLayout     from './components/layout/MainLayout';
+import { lazy, Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
 import Login          from './pages/Login';
-import Dashboard      from './pages/Dashboard';
-import Inventory from './pages/Inventory';
-import POS            from './pages/POS';
-import Reports        from './pages/Reports';
-import Expenses       from './pages/Expenses';
-import Deliveries     from './pages/Deliveries';
-import Cash           from './pages/Cash';
 import RequireRole    from './components/layout/RequireRole';
+
+// Cada pantalla se carga al visitarla (bundle inicial más chico; Reportes trae gráficas pesadas)
+const Dashboard  = lazy(() => import('./pages/Dashboard'));
+const Inventory  = lazy(() => import('./pages/Inventory'));
+const POS        = lazy(() => import('./pages/POS'));
+const Reports    = lazy(() => import('./pages/Reports'));
+const Expenses   = lazy(() => import('./pages/Expenses'));
+const Deliveries = lazy(() => import('./pages/Deliveries'));
+const Cash       = lazy(() => import('./pages/Cash'));
+
+const PageLoading = () => (
+  <p role="status" className="flex items-center gap-2 text-sm text-espresso/70 p-4">
+    <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Cargando...
+  </p>
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,7 +32,7 @@ const queryClient = new QueryClient({
 function ProtectedPage({ children }: { children: React.ReactNode }) {
   return (
     <ProtectedRoute>
-      <MainLayout>{children}</MainLayout>
+      <MainLayout><Suspense fallback={<PageLoading />}>{children}</Suspense></MainLayout>
     </ProtectedRoute>
   );
 }
