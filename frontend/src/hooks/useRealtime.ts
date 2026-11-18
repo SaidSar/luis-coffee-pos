@@ -87,6 +87,7 @@ export function useRealtime() {
         qc.invalidateQueries({ queryKey: ['orders'] });
         // Cobros y órdenes cambian los totales y pendientes de la caja
         qc.invalidateQueries({ queryKey: ['cash'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] }); // indicadores del día
         if (withProducts) qc.invalidateQueries({ queryKey: ['products'] });
         if (withDeliveries) qc.invalidateQueries({ queryKey: ['deliveries'] });
         withProducts = false;
