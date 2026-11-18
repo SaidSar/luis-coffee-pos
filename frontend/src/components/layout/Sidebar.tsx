@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingCart, Package,
-  Users, Truck, FileSpreadsheet, Wallet,
+  Users, Truck, FileSpreadsheet, Wallet, Banknote,
   Coffee, LogOut, X,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
@@ -20,7 +20,8 @@ const navItems: NavItem[] = [
   { label: 'Punto de venta', path: '/pos',        icon: ShoppingCart,     roles: ['ADMIN','CASHIER','WAITER'] },
   { label: 'Inventario',     path: '/inventory',  icon: Package                                  },
   { label: 'Empleados',      path: '/employees',  icon: Users,            roles: ['ADMIN']        },
-  { label: 'Entregas',       path: '/deliveries', icon: Truck                                    },
+  { label: 'Caja',           path: '/cash',       icon: Banknote,         roles: ['ADMIN','CASHIER'] },
+  { label: 'Entregas',       path: '/deliveries', icon: Truck,            roles: ['ADMIN','CASHIER','WAITER'] },
   { label: 'Gastos',         path: '/expenses',   icon: Wallet,           roles: ['ADMIN']        },
   { label: 'Reportes',       path: '/reports',    icon: FileSpreadsheet,  roles: ['ADMIN']        },
 ];

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { X, Banknote, CreditCard, ArrowLeftRight, Loader2, CircleCheckBig } from 'lucide-react';
 import { useDialog } from '../../hooks/useDialog';
 import { usePayOrder } from '../../hooks/usePos';
@@ -36,14 +36,17 @@ export default function PaymentModal({ order, onClose }: Props) {
   const changeCents   = receivedCents - totalCents;
   const canSubmit     = !pay.isPending && (method !== 'CASH' || (receivedValid && changeCents >= 0));
 
+  const payingNow = useRef(false);
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    // Bandera síncrona: un doble clic no debe mandar dos cobros (isPending cambia hasta el siguiente render)
+    if (!canSubmit || paid || payingNow.current) return;
+    payingNow.current = true;
     // CARD y TRANSFER cobran el total exacto que calculó el servidor
     const amountReceived = method === 'CASH' ? received.trim() : order.total;
     pay.mutate(
       { orderId: order.id, input: { method, amountReceived } },
-      { onSuccess: (result) => setPaid(result) },
+      { onSuccess: (result) => setPaid(result), onSettled: () => { payingNow.current = false; } },
     );
   };
 

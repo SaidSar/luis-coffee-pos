@@ -21,20 +21,54 @@ const itemSchema = z.object({
   notes:     z.string().trim().max(200).optional(),
 });
 
+// ── Entregas a domicilio ────────────────────────────────────
+export const MAX_DELIVERY_FEE = 1_000;
+
+// Teléfono MX: se aceptan espacios, guiones, puntos, paréntesis y prefijo +52 / 52; se guardan 10 dígitos
+export const phoneSchema = z.string().trim()
+  .transform((s) => s.replace(/[\s\-().]/g, '').replace(/^\+?52(?=\d{10}$)/, ''))
+  .refine((s) => /^\d{10}$/.test(s), { message: 'Teléfono inválido: 10 dígitos (ej. 669 123 4567)' });
+
+const deliveryFee = z
+  .union([z.number(), z.string().trim()])
+  .refine((v) => /^\d+(\.\d{1,2})?$/.test(String(v)), { message: 'Cargo de envío inválido (máximo 2 decimales)' })
+  .transform((v) => new Prisma.Decimal(String(v)))
+  .refine((d) => d.lte(MAX_DELIVERY_FEE), { message: `El cargo de envío máximo es ${MAX_DELIVERY_FEE}` });
+
+export const deliveryInputSchema = z.object({
+  phone:       phoneSchema,
+  address:     z.string().trim().min(1, { message: 'La dirección es obligatoria' }).max(250, { message: 'Máximo 250 caracteres' }),
+  reference:   z.string().trim().max(200).optional().transform((s) => (s ? s : undefined)),
+  deliveryFee: deliveryFee.default(new Prisma.Decimal(0)),
+});
+
 export const createOrderSchema = z
   .object({
-    type:         z.enum(['DINE_IN', 'TAKEOUT']),
+    type:         z.enum(['DINE_IN', 'TAKEOUT', 'DELIVERY']),
     tableId:      id.optional(),
     customerName: z.string().trim().min(1).max(80).optional(),
+    delivery:     deliveryInputSchema.optional(),
     items:        z.array(itemSchema).min(1).max(50),
   })
   .refine((d) => d.type !== 'DINE_IN' || d.tableId, {
     message: 'Las órdenes en mesa requieren tableId',
     path:    ['tableId'],
   })
-  .refine((d) => d.type !== 'TAKEOUT' || !d.tableId, {
-    message: 'Las órdenes para llevar no llevan mesa',
+  .refine((d) => d.type === 'DINE_IN' || !d.tableId, {
+    message: 'Solo las órdenes en mesa llevan mesa',
     path:    ['tableId'],
+  })
+  .refine((d) => d.type !== 'DELIVERY' || d.customerName, {
+    message: 'Las entregas a domicilio requieren el nombre del cliente',
+    path:    ['customerName'],
+  })
+  .refine((d) => d.type !== 'DELIVERY' || d.delivery, {
+    message: 'Las entregas a domicilio requieren teléfono y dirección',
+    path:    ['delivery'],
+  })
+  .refine((d) => d.type === 'DELIVERY' || !d.delivery, {
+    message: 'Solo las órdenes a domicilio llevan datos de entrega',
+    path:    ['delivery'],
   });
 
 export const addItemsSchema = z.object({ items: z.array(itemSchema).min(1).max(50) });
@@ -77,21 +111,39 @@ export const orderInclude = {
     include: { product: { select: { id: true, name: true } } },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   },
-  table:   { select: { id: true, number: true } },
-  user:    { select: { id: true, name: true } },
-  payment: true,
+  table:    { select: { id: true, number: true } },
+  user:     { select: { id: true, name: true } },
+  payment:  true,
+  delivery: true,
 } satisfies Prisma.OrderInclude;
 
 export type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
 
+// Suma de productos (sin cargos)
 export const orderTotal = (items: { unitPrice: Prisma.Decimal; quantity: number }[]) =>
   items.reduce((sum, i) => sum.add(i.unitPrice.mul(i.quantity)), new Prisma.Decimal(0));
 
-// Totales calculados en el servidor con Decimal y enviados como string con 2 decimales
-export const toOrderView = (order: OrderWithRelations) => ({
-  ...order,
-  items: order.items.map((i) => ({ ...i, lineTotal: i.unitPrice.mul(i.quantity).toFixed(2) })),
-  total: orderTotal(order.items).toFixed(2),
+// Totales calculados en el servidor con Decimal y enviados como string con 2 decimales.
+// total = productos + cargo de envío (si es entrega a domicilio)
+export const toOrderView = (order: OrderWithRelations) => {
+  const itemsTotal = orderTotal(order.items);
+  const fee = order.delivery?.deliveryFee ?? new Prisma.Decimal(0);
+  return {
+    ...order,
+    items:      order.items.map((i) => ({ ...i, lineTotal: i.unitPrice.mul(i.quantity).toFixed(2) })),
+    itemsTotal: itemsTotal.toFixed(2),
+    total:      itemsTotal.add(fee).toFixed(2),
+  };
+};
+
+// Payload del evento delivery:updated (el cliente solo lo usa para refrescar; datos mínimos)
+export const deliveryEvent = (o: { id: string; ticketNumber: number; status: OrderStatus; payment: unknown; delivery: { id: string; status: string } | null }) => ({
+  id:           o.delivery?.id,
+  orderId:      o.id,
+  ticketNumber: o.ticketNumber,
+  status:       o.delivery?.status,
+  orderStatus:  o.status,
+  paid:         !!o.payment,
 });
 
 // ── Reglas compartidas ──────────────────────────────────────
@@ -177,10 +229,12 @@ export const occupyTable = async (tx: Tx, tableId: string) => {
 };
 
 export interface LockedOrder {
-  status:    OrderStatus;
-  tableId:   string | null;
-  paid:      boolean;
-  itemCount: number;
+  status:      OrderStatus;
+  tableId:     string | null;
+  paid:        boolean;
+  itemCount:   number;
+  deliveryId:  string | null;
+  deliveryFee: Prisma.Decimal; // 0 si no es entrega a domicilio
 }
 
 // Bloquea la orden (FOR UPDATE) y devuelve en la misma consulta lo que las reglas necesitan
@@ -189,8 +243,11 @@ export const lockOrder = async (tx: Tx, orderId: string): Promise<LockedOrder> =
     SELECT o.status::text AS status,
            o."tableId",
            EXISTS (SELECT 1 FROM "Payment" p WHERE p."orderId" = o.id) AS paid,
-           (SELECT count(*)::int FROM "OrderItem" i WHERE i."orderId" = o.id) AS "itemCount"
+           (SELECT count(*)::int FROM "OrderItem" i WHERE i."orderId" = o.id) AS "itemCount",
+           d.id AS "deliveryId",
+           COALESCE(d."deliveryFee", 0)::numeric(10,2) AS "deliveryFee"
       FROM "Order" o
+      LEFT JOIN "Delivery" d ON d."orderId" = o.id
      WHERE o.id = ${orderId}
        FOR UPDATE OF o`;
   if (rows.length === 0) throw new HttpError(404, 'Orden no encontrada');

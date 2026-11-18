@@ -130,6 +130,7 @@ export default function Expenses() {
                   <span className="whitespace-normal block max-w-72">
                     {e.description}
                     {e.notes && <span className="block text-xs text-espresso/70">{e.notes}</span>}
+                    {e.paidFromCash && <span className="block text-xs font-medium text-caramel-dark">Pagado de caja</span>}
                   </span>
                 ) },
                 { header: 'Categoría',      cell: (e) => EXPENSE_CATEGORY_LABEL[e.category] ?? e.category },

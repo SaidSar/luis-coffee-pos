@@ -58,6 +58,7 @@ export default function ExpenseFormModal({ expense, onClose }: Props) {
     category:    expense?.category ?? 'INSUMOS',
     date:        expense?.date ?? todayInMazatlan(),
     notes:       expense?.notes ?? '',
+    paidFromCash: expense?.paidFromCash ?? false,
   });
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
 
@@ -161,6 +162,17 @@ export default function ExpenseFormModal({ expense, onClose }: Props) {
               className={`${inputCls(!!errors.notes)} py-2 resize-none`} />
             <p id="expense-notes-hint" className="mt-1 text-xs text-espresso/70">{form.notes.length}/500 caracteres</p>
             {fieldError('notes')}
+          </div>
+
+          <div className="flex items-start gap-3">
+            <input id="expense-paidFromCash" type="checkbox" checked={form.paidFromCash}
+              onChange={(e) => setForm((f) => ({ ...f, paidFromCash: e.target.checked }))}
+              aria-describedby="expense-paidFromCash-hint"
+              className="mt-0.5 h-6 w-6 shrink-0 rounded border-espresso/50 accent-caramel-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-caramel-dark" />
+            <div>
+              <label htmlFor="expense-paidFromCash" className="text-sm font-medium text-espresso">Pagado de caja</label>
+              <p id="expense-paidFromCash-hint" className="text-xs text-espresso/70">Márcalo si salió del efectivo de la caja: se resta del efectivo esperado del turno.</p>
+            </div>
           </div>
 
           {serverError && (

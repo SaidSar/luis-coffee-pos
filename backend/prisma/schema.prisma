@@ -66,6 +66,8 @@ model User {
   orders     Order[]
   deliveries Delivery[] @relation("EmployeeDeliveries")
   expenses   Expense[]
+  shiftsOpened CashShift[] @relation("ShiftOpenedBy")
+  shiftsClosed CashShift[] @relation("ShiftClosedBy")
 }
 
 model Table {
@@ -146,13 +148,19 @@ model Payment {
 model Delivery {
   id          String         @id @default(uuid())
   orderId     String         @unique
-  employeeId  String
+  employeeId  String?        // repartidor como usuario del sistema (opcional; hoy se usa driverName)
   address     String
+  phone       String         // 10 dígitos, normalizado
+  reference   String?
+  deliveryFee Decimal        @default(0) @db.Decimal(10, 2)
+  driverName  String?        // obligatorio al pasar a IN_TRANSIT
   status      DeliveryStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  inTransitAt DateTime?
   deliveredAt DateTime?
 
   order    Order @relation(fields: [orderId], references: [id])
-  employee User  @relation("EmployeeDeliveries", fields: [employeeId], references: [id])
+  employee User? @relation("EmployeeDeliveries", fields: [employeeId], references: [id])
 }
 
 model Expense {
@@ -163,6 +171,29 @@ model Expense {
   category    String   // una de EXPENSE_CATEGORIES (validada en la API)
   expenseDate DateTime @default(now()) // mediodía hora de Mazatlán del día del gasto
   notes       String?
+  paidFromCash Boolean @default(false) // salió del efectivo de la caja (resta en el corte)
+  createdAt   DateTime @default(now()) // instante de registro: ubica el gasto dentro de un turno de caja
 
   user User @relation(fields: [userId], references: [id])
+}
+// Turno de caja. Solo puede haber uno abierto (closedAt null); se garantiza en la API con un candado.
+// Al cerrar se congela expectedCash (fondo + ventas en efectivo − gastos de caja del turno) y la diferencia.
+// Un turno cerrado es inmutable (la API no expone edición ni borrado).
+model CashShift {
+  id           String    @id @default(uuid())
+  openedById   String
+  openedAt     DateTime  @default(now())
+  openingFloat Decimal   @db.Decimal(10, 2)
+  closedById   String?
+  closedAt     DateTime?
+  countedCash  Decimal?  @db.Decimal(10, 2)
+  expectedCash Decimal?  @db.Decimal(10, 2)
+  difference   Decimal?  @db.Decimal(10, 2) // contado − esperado (+ sobrante, − faltante)
+  notes        String?
+
+  openedBy User  @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  closedBy User? @relation("ShiftClosedBy", fields: [closedById], references: [id])
+
+  @@index([openedAt])
+  @@index([closedAt])
 }

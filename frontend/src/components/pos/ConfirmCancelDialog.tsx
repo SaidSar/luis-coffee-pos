@@ -8,9 +8,10 @@ interface Props {
   error:        string | null;
   onConfirm:    () => void;
   onClose:      () => void;
+  description?: string;
 }
 
-export default function ConfirmCancelDialog({ ticketNumber, pending, error, onConfirm, onClose }: Props) {
+export default function ConfirmCancelDialog({ ticketNumber, pending, error, onConfirm, onClose, description }: Props) {
   // Escape cierra (salvo mientras se procesa, para no perder el resultado)
   const dialogRef = useDialog<HTMLDivElement>(() => { if (!pending) onClose(); });
 
@@ -27,7 +28,7 @@ export default function ConfirmCancelDialog({ ticketNumber, pending, error, onCo
       >
         <h2 id="cancel-title" className="text-lg font-bold text-espresso">¿Cancelar el ticket #{ticketNumber}?</h2>
         <p id="cancel-desc" className="text-sm text-espresso/70">
-          La orden quedará cancelada y la mesa se liberará. Esta acción no se puede deshacer.
+          {description ?? 'La orden quedará cancelada y la mesa se liberará. Esta acción no se puede deshacer.'}
         </p>
         {error && <p role="alert" className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
         <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">

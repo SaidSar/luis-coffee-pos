@@ -10,19 +10,31 @@ export interface DraftItem {
   notes?:    string;
 }
 
+// Datos de entrega a domicilio (texto tal cual lo escribe el usuario; el servidor valida y normaliza)
+export interface DeliveryDraft {
+  phone:       string;
+  address:     string;
+  reference:   string;
+  deliveryFee: string;
+}
+
+const EMPTY_DELIVERY: DeliveryDraft = { phone: '', address: '', reference: '', deliveryFee: '0' };
+
 interface PosDraftState {
   tableId:       string | null;
   orderType:     PosOrderType;
   customerName?: string;
+  delivery:      DeliveryDraft;
   items:         DraftItem[];
 
-  addItem:         (item: Omit<DraftItem, 'quantity' | 'notes'>) => void;
-  setQuantity:     (productId: string, quantity: number) => void;
-  setNotes:        (productId: string, notes: string) => void;
-  setCustomerName: (name: string) => void;
-  setTable:        (tableId: string) => void;
-  setOrderType:    (type: PosOrderType) => void;
-  clear:           () => void;
+  addItem:          (item: Omit<DraftItem, 'quantity' | 'notes'>) => void;
+  setQuantity:      (productId: string, quantity: number) => void;
+  setNotes:         (productId: string, notes: string) => void;
+  setCustomerName:  (name: string) => void;
+  setDeliveryField: (field: keyof DeliveryDraft, value: string) => void;
+  setTable:         (tableId: string) => void;
+  setOrderType:     (type: PosOrderType) => void;
+  clear:            () => void;
 }
 
 const MAX_QTY = 99; // mismo límite que valida el servidor
@@ -31,6 +43,7 @@ export const usePosDraftStore = create<PosDraftState>()((set) => ({
   tableId:      null,
   orderType:    'DINE_IN',
   customerName: undefined,
+  delivery:     EMPTY_DELIVERY,
   items:        [],
 
   // Si el producto ya está en el borrador, suma 1
@@ -60,15 +73,18 @@ export const usePosDraftStore = create<PosDraftState>()((set) => ({
 
   setCustomerName: (name) => set({ customerName: name }),
 
+  setDeliveryField: (field, value) => set((s) => ({ delivery: { ...s.delivery, [field]: value } })),
+
   // Cambiar de mesa empieza un borrador nuevo
-  setTable: (tableId) => set({ tableId, orderType: 'DINE_IN', customerName: undefined, items: [] }),
+  setTable: (tableId) => set({ tableId, orderType: 'DINE_IN', customerName: undefined, delivery: EMPTY_DELIVERY, items: [] }),
 
+  // Para llevar y A domicilio empiezan un borrador nuevo sin mesa
   setOrderType: (type) =>
-    set(type === 'TAKEOUT'
-      ? { orderType: 'TAKEOUT', tableId: null, customerName: undefined, items: [] }
-      : { orderType: 'DINE_IN' }),
+    set(type === 'DINE_IN'
+      ? { orderType: 'DINE_IN' }
+      : { orderType: type, tableId: null, customerName: undefined, delivery: EMPTY_DELIVERY, items: [] }),
 
-  clear: () => set({ items: [] }),
+  clear: () => set({ items: [], delivery: EMPTY_DELIVERY, customerName: undefined }),
 }));
 
 // Total del borrador, solo para mostrar (el total oficial lo calcula el servidor)

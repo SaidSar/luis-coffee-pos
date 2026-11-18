@@ -1,4 +1,4 @@
-import { ShoppingBag, Loader2 } from 'lucide-react';
+import { ShoppingBag, Bike, Loader2, type LucideIcon } from 'lucide-react';
 import type { Order, Table } from '../../types/pos';
 import { describeApiError } from '../../lib/apiError';
 import { tableStatusMeta, orderStatusMeta, focusRing, btnSecondary } from './posUi';
@@ -9,31 +9,79 @@ interface Props {
   error:           unknown;
   onRetry:         () => void;
   selectedTableId: string | null;
-  takeoutSelected: boolean;
+  newMode:         'TAKEOUT' | 'DELIVERY' | null; // nueva orden sin mesa seleccionada
   takeoutOrders:   Order[];
+  deliveryOrders:  Order[];
   currentOrderId:  string | null;
   onSelectTable:   (table: Table) => void;
   onNewTakeout:    () => void;
+  onNewDelivery:   () => void;
   onSelectOrder:   (order: Order) => void;
 }
 
+// Lista de órdenes activas sin mesa (para llevar o a domicilio)
+function ActiveOrderList({ title, icon: TypeIcon, orders, currentOrderId, onSelect }: {
+  title: string; icon: LucideIcon; orders: Order[]; currentOrderId: string | null; onSelect: (o: Order) => void;
+}) {
+  if (orders.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <h3 className="text-xs font-semibold text-espresso/70 uppercase tracking-wide mb-2">{title}</h3>
+      <ul className="flex flex-wrap gap-2">
+        {orders.map((o) => {
+          const meta = orderStatusMeta[o.status];
+          const Icon = meta.icon;
+          return (
+            <li key={o.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(o)}
+                aria-pressed={currentOrderId === o.id}
+                className={`${btnSecondary} ${currentOrderId === o.id ? 'ring-2 ring-caramel-dark' : ''}`}
+              >
+                <TypeIcon size={14} aria-hidden="true" />
+                #{o.ticketNumber}{o.customerName ? ` · ${o.customerName}` : ''}
+                <span className="flex items-center gap-1 text-xs font-medium">
+                  <Icon size={12} aria-hidden="true" /> {meta.label}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function TableGrid({
-  tables, isLoading, error, onRetry, selectedTableId, takeoutSelected,
-  takeoutOrders, currentOrderId, onSelectTable, onNewTakeout, onSelectOrder,
+  tables, isLoading, error, onRetry, selectedTableId, newMode,
+  takeoutOrders, deliveryOrders, currentOrderId, onSelectTable, onNewTakeout, onNewDelivery, onSelectOrder,
 }: Props) {
+  const newPressed = (m: 'TAKEOUT' | 'DELIVERY') => newMode === m && !currentOrderId;
   return (
     <section aria-labelledby="pos-tables-title" className="bg-white rounded-2xl border border-caramel/10 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 id="pos-tables-title" className="text-sm font-semibold text-espresso">Mesas</h2>
-        <button
-          type="button"
-          onClick={onNewTakeout}
-          aria-pressed={takeoutSelected && !currentOrderId}
-          className={`${btnSecondary} ${takeoutSelected && !currentOrderId ? 'ring-2 ring-caramel-dark' : ''}`}
-        >
-          <ShoppingBag size={16} aria-hidden="true" />
-          Para llevar
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onNewTakeout}
+            aria-pressed={newPressed('TAKEOUT')}
+            className={`${btnSecondary} ${newPressed('TAKEOUT') ? 'ring-2 ring-caramel-dark' : ''}`}
+          >
+            <ShoppingBag size={16} aria-hidden="true" />
+            Para llevar
+          </button>
+          <button
+            type="button"
+            onClick={onNewDelivery}
+            aria-pressed={newPressed('DELIVERY')}
+            className={`${btnSecondary} ${newPressed('DELIVERY') ? 'ring-2 ring-caramel-dark' : ''}`}
+          >
+            <Bike size={16} aria-hidden="true" />
+            A domicilio
+          </button>
+        </div>
       </div>
 
       {isLoading && (
@@ -86,33 +134,8 @@ export default function TableGrid({
         </ul>
       )}
 
-      {takeoutOrders.length > 0 && (
-        <div className="mt-4">
-          <h3 className="text-xs font-semibold text-espresso/70 uppercase tracking-wide mb-2">Para llevar activas</h3>
-          <ul className="flex flex-wrap gap-2">
-            {takeoutOrders.map((o) => {
-              const meta = orderStatusMeta[o.status];
-              const Icon = meta.icon;
-              return (
-                <li key={o.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectOrder(o)}
-                    aria-pressed={currentOrderId === o.id}
-                    className={`${btnSecondary} ${currentOrderId === o.id ? 'ring-2 ring-caramel-dark' : ''}`}
-                  >
-                    <ShoppingBag size={14} aria-hidden="true" />
-                    #{o.ticketNumber}{o.customerName ? ` · ${o.customerName}` : ''}
-                    <span className="flex items-center gap-1 text-xs font-medium">
-                      <Icon size={12} aria-hidden="true" /> {meta.label}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+      <ActiveOrderList title="Para llevar activas" icon={ShoppingBag} orders={takeoutOrders} currentOrderId={currentOrderId} onSelect={onSelectOrder} />
+      <ActiveOrderList title="A domicilio activas" icon={Bike} orders={deliveryOrders} currentOrderId={currentOrderId} onSelect={onSelectOrder} />
     </section>
   );
 }

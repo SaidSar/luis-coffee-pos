@@ -21,6 +21,13 @@ const offsetMinutes = (at: Date): number => {
   return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
 };
 
+// Día YYYY-MM-DD → instante de las 00:00 de ese día en Mazatlán (para rangos [inicio de from, inicio de to+1))
+export const mazatlanDayStart = (ymd: string): Date => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const guess = new Date(Date.UTC(y, m - 1, d));
+  return new Date(guess.getTime() - offsetMinutes(guess) * 60_000);
+};
+
 // Día YYYY-MM-DD → instante del mediodía de ese día en Mazatlán. Se guarda a mediodía para que el gasto
 // quede dentro del día local sin ambigüedad y lo encuentren los filtros de reportes (rango por día local).
 export const mazatlanNoon = (ymd: string): Date => {

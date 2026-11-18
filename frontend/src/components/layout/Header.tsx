@@ -2,6 +2,7 @@ import { useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import ConnectionIndicator from './ConnectionIndicator';
+import CashClosedNotice from '../cash/CashClosedNotice';
 
 const pageTitles: Record<string, string> = {
   '/dashboard':  'Dashboard',
@@ -11,6 +12,7 @@ const pageTitles: Record<string, string> = {
   '/deliveries': 'Entregas',
   '/expenses':   'Gastos',
   '/reports':    'Reportes',
+  '/cash':       'Caja',
 };
 
 const roleLabels: Record<string, string> = {
@@ -48,6 +50,8 @@ export default function Header({ onMenuClick }: Props) {
 
       {/* Derecha: estado de conexión + usuario */}
       <div className="flex items-center gap-3">
+        {/* En el POS el aviso va en la página; en /cash la propia pantalla muestra el estado */}
+        {location.pathname !== '/pos' && location.pathname !== '/cash' && <CashClosedNotice variant="pill" />}
         <ConnectionIndicator />
         <div className="text-right hidden sm:block">
           <p className="text-sm font-semibold text-espresso leading-tight">{user?.name}</p>
