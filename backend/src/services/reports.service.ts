@@ -7,7 +7,8 @@ import { prisma } from '../lib/prisma';
 // Fechas: las columnas DateTime de Prisma son "timestamp" sin zona que guardan UTC.
 //   - Hora local:   (col AT TIME ZONE 'UTC') AT TIME ZONE 'America/Mazatlan'
 //   - Rango:        [from 00:00 local, to+1 00:00 local) convertido a UTC  → "to" es inclusivo
-// Ventas: órdenes PAID cuya fecha de Payment.paidAt cae en el rango. Importe = Payment.amount.
+// Ventas: órdenes PAID cuya fecha Order.paidAt (cuando se saldó) cae en el rango. Importe = suma de sus
+// Payment.amount (porciones aplicadas; con cuenta dividida hay varios pagos por orden). Tickets = órdenes.
 
 export const REPORT_TZ = 'America/Mazatlan';
 export type GroupBy = 'day' | 'week' | 'month';
@@ -19,12 +20,12 @@ export const startUtc = (d: string) => Prisma.sql`(((${d}::date)::timestamp AT T
 export const endUtcExcl = (d: string) => Prisma.sql`((((${d}::date) + 1)::timestamp AT TIME ZONE 'America/Mazatlan') AT TIME ZONE 'UTC')`;
 export const inRange = (col: Prisma.Sql, r: ReportRange) => Prisma.sql`${col} >= ${startUtc(r.from)} AND ${col} < ${endUtcExcl(r.to)}`;
 
-// Órdenes pagadas en el rango (base de todas las ventas)
+// Órdenes saldadas en el rango (base de todas las ventas): una fila por orden
 const paidOrders = (r: ReportRange) => Prisma.sql`
-  SELECT o.id, o."userId", p.method, p.amount, p."paidAt"
+  SELECT o.id, o."userId", o."paidAt",
+         (SELECT COALESCE(SUM(p.amount), 0) FROM "Payment" p WHERE p."orderId" = o.id) AS amount
     FROM "Order" o
-    JOIN "Payment" p ON p."orderId" = o.id
-   WHERE o.status = 'PAID' AND ${inRange(Prisma.sql`p."paidAt"`, r)}`;
+   WHERE o.status = 'PAID' AND ${inRange(Prisma.sql`o."paidAt"`, r)}`;
 
 const n = (v: Prisma.Decimal | number | bigint | null | undefined) => (v == null ? 0 : Number(v));
 const money = (v: Prisma.Decimal | number | null | undefined) => Math.round(n(v) * 100) / 100;
@@ -228,8 +229,10 @@ export interface PaymentMethodRow { method: 'CASH' | 'CARD' | 'TRANSFER'; ticket
 export const byPaymentMethod = async (r: ReportRange): Promise<PaymentMethodRow[]> => {
   const rows = await prisma.$queryRaw<{ method: PaymentMethodRow['method']; tickets: number; sales: Prisma.Decimal }[]>`
     WITH paid AS (${paidOrders(r)})
-    SELECT paid.method::text AS method, COUNT(*)::int AS tickets, SUM(paid.amount)::numeric(14,2) AS sales
-      FROM paid GROUP BY paid.method ORDER BY sales DESC`;
+    -- Suma de las porciones por método; tickets = órdenes distintas que usaron ese método
+    SELECT p.method::text AS method, COUNT(DISTINCT paid.id)::int AS tickets, SUM(p.amount)::numeric(14,2) AS sales
+      FROM paid JOIN "Payment" p ON p."orderId" = paid.id
+     GROUP BY p.method ORDER BY sales DESC`;
   return rows.map((x) => ({ method: x.method, tickets: x.tickets, sales: money(x.sales) }));
 };
 

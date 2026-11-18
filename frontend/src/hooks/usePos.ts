@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tablesService, ordersService } from '../services/posService';
 import { useRealtimeStore } from '../stores/realtimeStore';
-import type { Order, CreateOrderInput, OrderItemInput, OrderStatus, OrderStatusChange, PayOrderInput } from '../types/pos';
+import type { Order, CreateOrderInput, OrderItemInput, OrderStatus, OrderStatusChange, PayOrderInput, PaySplitInput } from '../types/pos';
 
 const TABLES   = ['tables'] as const;
 const ORDERS   = ['orders'] as const;
@@ -34,7 +34,7 @@ const useCacheOrder = () => {
 // ── Consultas ─────────────────────────────────────────────────
 export const useTables = () => {
   const refetchInterval = useRefreshInterval();
-  return useQuery({ queryKey: TABLES, queryFn: tablesService.list, refetchInterval });
+  return useQuery({ queryKey: TABLES, queryFn: () => tablesService.list(), refetchInterval });
 };
 
 export const useOrders = (statuses?: OrderStatus[]) => {
@@ -101,10 +101,60 @@ export const useCancelOrder = () => {
 export const usePayOrder = () => {
   const invalidate = useInvalidatePos();
   const cache      = useCacheOrder();
+  const qc         = useQueryClient();
   return useMutation({
     mutationFn: ({ orderId, input }: { orderId: string; input: PayOrderInput }) =>
       ordersService.pay(orderId, input),
     onSuccess: cache,
-    onSettled: () => invalidate(true),
+    onSettled: () => { invalidate(true); qc.invalidateQueries({ queryKey: ['deliveries'] }); qc.invalidateQueries({ queryKey: ['cash'] }); },
   });
+};
+
+// Cobrar una cuenta (unidades elegidas); también descuenta stock de esas unidades
+export const usePaySplit = () => {
+  const invalidate = useInvalidatePos();
+  const cache      = useCacheOrder();
+  const qc         = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, input }: { orderId: string; input: PaySplitInput }) =>
+      ordersService.paySplit(orderId, input),
+    onSuccess: cache,
+    onSettled: () => { invalidate(true); qc.invalidateQueries({ queryKey: ['cash'] }); },
+  });
+};
+
+// ── Administración de mesas ───────────────────────────────────
+// Todas, incluidas las desactivadas (solo ADMIN)
+export const useAllTables = (enabled: boolean) =>
+  useQuery({ queryKey: [...TABLES, 'all'], queryFn: () => tablesService.list(true), enabled });
+
+const useInvalidateTables = () => {
+  const qc = useQueryClient();
+  return () => qc.invalidateQueries({ queryKey: TABLES });
+};
+
+export const useCreateTable = () => {
+  const invalidate = useInvalidateTables();
+  return useMutation({ mutationFn: (capacity: number) => tablesService.create({ capacity }), onSettled: invalidate });
+};
+
+export const useSetTableActive = () => {
+  const invalidate = useInvalidateTables();
+  return useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) => tablesService.update(id, { active }),
+    onSettled:  invalidate,
+  });
+};
+
+export const useMergeTables = () => {
+  const invalidate = useInvalidateTables();
+  return useMutation({
+    mutationFn: ({ id, tableIds }: { id: string; tableIds: number[] }) => tablesService.merge(id, tableIds),
+    onSettled:  invalidate,
+  });
+};
+
+export const useUnmergeTable = () => {
+  const invalidate = useInvalidateTables();
+  return useMutation({ mutationFn: (id: string) => tablesService.unmerge(id), onSettled: invalidate });
 };

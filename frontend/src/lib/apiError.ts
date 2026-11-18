@@ -1,7 +1,7 @@
 import { isAxiosError } from 'axios';
 
 // Contexto de la operación: el mismo status significa cosas distintas según dónde ocurra
-export type ErrorContext = 'load' | 'order' | 'status' | 'payment' | 'cancel' | 'report' | 'expense' | 'cash';
+export type ErrorContext = 'load' | 'order' | 'status' | 'payment' | 'cancel' | 'report' | 'expense' | 'cash' | 'tables';
 
 // Errores por campo que devuelve el backend en details (validación zod): { path, message }[]
 export const fieldErrorsFrom = (err: unknown): Record<string, string> => {
@@ -45,6 +45,7 @@ const conflictMessage = (ctx: ErrorContext, hasProducts: boolean): string => {
   }
   if (ctx === 'cancel') return 'No se puede cancelar: la orden ya fue pagada o cancelada.';
   if (ctx === 'status') return 'Ese cambio de estado ya no es posible. Se actualizó la vista.';
+  if (ctx === 'tables') return 'No se pudo: alguna mesa está ocupada, unida a otra o desactivada. Se actualizó la vista.';
   if (ctx === 'cash') return 'La caja cambió en otra sesión (ya estaba abierta o cerrada). Se actualizó la vista.';
   return 'Conflicto con el estado actual. Recarga la página.';
 };
@@ -75,6 +76,7 @@ export const describeApiError = (err: unknown, ctx: ErrorContext): ApiErrorInfo 
     message = ctx === 'report' ? 'Solo un administrador puede ver y exportar los reportes.'
       : ctx === 'expense' ? 'Solo un administrador puede gestionar los gastos.'
       : ctx === 'cash' ? 'Solo cajeros y administradores pueden operar la caja.'
+      : ctx === 'tables' ? 'Tu rol no puede hacer este cambio en las mesas.'
       : 'No tienes permiso para esta acción.';
   } else if (status === 404) {
     message = ctx === 'load' ? 'No se encontró la información solicitada.'

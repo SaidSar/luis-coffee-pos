@@ -90,9 +90,26 @@ const money = z
   .transform((v) => new Prisma.Decimal(String(v)))
   .refine((d) => d.gt(0) && d.lt(10_000_000), { message: 'Monto fuera de rango' });
 
-export const paymentSchema = z.object({
+export const paymentLineSchema = z.object({
   method:         z.enum(['CASH', 'CARD', 'TRANSFER']),
-  amountReceived: money,
+  amount:         money,
+  amountReceived: money.optional(), // solo efectivo
+});
+const paymentLines = z.array(paymentLineSchema).min(1, { message: 'Indica al menos un pago' }).max(5, { message: 'Máximo 5 pagos por cuenta' });
+
+// Cobrar todo (POST /:id/payment): cuerpo anterior {method, amountReceived} o nuevo {payments:[...]}
+export const paymentSchema = z.union([
+  z.object({ payments: paymentLines }).strict(),
+  z.object({ method: z.enum(['CASH', 'CARD', 'TRANSFER']), amountReceived: money }),
+], { message: 'Indica method y amountReceived, o payments' });
+
+// Cobrar una cuenta (POST /:id/splits/pay)
+export const splitPaySchema = z.object({
+  label:    z.string().trim().max(60, { message: 'Máximo 60 caracteres' }).optional().transform((s) => (s ? s : undefined)),
+  items:    z.array(z.object({ orderItemId: id, quantity: z.number().int().min(1, { message: 'La cantidad debe ser mayor a 0' }).max(99) }))
+    .min(1, { message: 'Elige al menos un producto' }).max(100)
+    .refine((a) => new Set(a.map((x) => x.orderItemId)).size === a.length, { message: 'Hay productos repetidos' }),
+  payments: paymentLines,
 });
 
 export const listQuerySchema = z.object({
@@ -108,12 +125,16 @@ export const listQuerySchema = z.object({
 // Items en orden cronológico (rondas); desempate por id dentro de una misma ronda.
 export const orderInclude = {
   items:   {
-    include: { product: { select: { id: true, name: true } } },
+    include: { product: { select: { id: true, name: true } }, splitItems: { select: { quantity: true } } },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   },
   table:    { select: { id: true, number: true } },
   user:     { select: { id: true, name: true } },
-  payment:  true,
+  payments: { orderBy: [{ paidAt: 'asc' }, { id: 'asc' }] },
+  splits:   {
+    include: { items: { select: { orderItemId: true, quantity: true } }, payments: { orderBy: { id: 'asc' } } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  },
   delivery: true,
 } satisfies Prisma.OrderInclude;
 
@@ -125,25 +146,42 @@ export const orderTotal = (items: { unitPrice: Prisma.Decimal; quantity: number 
 
 // Totales calculados en el servidor con Decimal y enviados como string con 2 decimales.
 // total = productos + cargo de envío (si es entrega a domicilio)
+// Vista de la orden: totales, lo cobrado por cuentas y lo que falta (todo calculado en el servidor).
+// "payment" se conserva por compatibilidad: último pago registrado (o null).
 export const toOrderView = (order: OrderWithRelations) => {
   const itemsTotal = orderTotal(order.items);
   const fee = order.delivery?.deliveryFee ?? new Prisma.Decimal(0);
+  const total = itemsTotal.add(fee);
+  const paidAmount = order.payments.reduce((a, p) => a.add(p.amount), new Prisma.Decimal(0));
+  const { splits, payments, items, ...rest } = order;
   return {
-    ...order,
-    items:      order.items.map((i) => ({ ...i, lineTotal: i.unitPrice.mul(i.quantity).toFixed(2) })),
+    ...rest,
+    items: items.map(({ splitItems, ...i }) => {
+      const assigned = splitItems.reduce((a, x) => a + x.quantity, 0);
+      return { ...i, lineTotal: i.unitPrice.mul(i.quantity).toFixed(2), paidQuantity: assigned, remaining: i.quantity - assigned };
+    }),
     itemsTotal: itemsTotal.toFixed(2),
-    total:      itemsTotal.add(fee).toFixed(2),
+    total:      total.toFixed(2),
+    paidAmount: paidAmount.toFixed(2),
+    balance:    order.status === 'CANCELLED' ? '0.00' : total.sub(paidAmount).toFixed(2),
+    paid:       order.status === 'PAID',
+    payments,
+    payment:    payments[payments.length - 1] ?? null,
+    splits:     splits.map((sp, idx) => ({
+      id: sp.id, label: sp.label, number: idx + 1, amount: sp.amount.toFixed(2), createdAt: sp.createdAt,
+      items: sp.items, payments: sp.payments,
+    })),
   };
 };
 
 // Payload del evento delivery:updated (el cliente solo lo usa para refrescar; datos mínimos)
-export const deliveryEvent = (o: { id: string; ticketNumber: number; status: OrderStatus; payment: unknown; delivery: { id: string; status: string } | null }) => ({
+export const deliveryEvent = (o: { id: string; ticketNumber: number; status: OrderStatus; delivery: { id: string; status: string } | null }) => ({
   id:           o.delivery?.id,
   orderId:      o.id,
   ticketNumber: o.ticketNumber,
   status:       o.delivery?.status,
   orderStatus:  o.status,
-  paid:         !!o.payment,
+  paid:         o.status === 'PAID',
 });
 
 // ── Reglas compartidas ──────────────────────────────────────
@@ -212,18 +250,28 @@ export const trackedProducts = (tx: Tx, ids: string[]) =>
 // Marca la mesa OCCUPIED y devuelve su orden activa en UNA consulta. El UPDATE bloquea la fila
 // hasta el commit, así que dos pedidos simultáneos a la misma mesa se serializan.
 // Si ya tenía orden activa, la mesa ya estaba OCCUPIED: el estado no cambia en la práctica.
+// Vista de una mesa para eventos table:updated
+export interface TableEvent { id: string; number: number; capacity: number; status: string; active: boolean; mergedIntoId: string | null }
+
+// Ocupa la mesa para una orden en mesa. Bloquea la fila: una mesa desactivada o unida a otra (secundaria) no admite órdenes.
 export const occupyTable = async (tx: Tx, tableId: string) => {
-  const rows = await tx.$queryRaw<{
-    id: string; number: number; capacity: number; status: string; activeOrderId: string | null;
-  }[]>`
+  const [cur] = await tx.$queryRaw<{ active: boolean; mergedIntoId: string | null; principal: number | null }[]>`
+    SELECT t.active, t."mergedIntoId", p.number AS principal
+      FROM "Table" t LEFT JOIN "Table" p ON p.id = t."mergedIntoId"
+     WHERE t.id = ${tableId}
+       FOR UPDATE OF t`;
+  if (!cur) throw new HttpError(404, 'Mesa no encontrada');
+  if (!cur.active) throw new HttpError(409, 'La mesa está desactivada');
+  if (cur.mergedIntoId) throw new HttpError(409, `La mesa está unida a la mesa ${cur.principal}: usa la mesa principal`);
+
+  const rows = await tx.$queryRaw<(TableEvent & { activeOrderId: string | null })[]>`
     UPDATE "Table" t
        SET status = 'OCCUPIED'
      WHERE t.id = ${tableId}
- RETURNING t.id, t.number, t.capacity, t.status::text AS status,
+ RETURNING t.id, t.number, t.capacity, t.status::text AS status, t.active, t."mergedIntoId",
            (SELECT o.id FROM "Order" o
              WHERE o."tableId" = t.id AND o.status IN ('OPEN', 'IN_KITCHEN', 'SERVED')
              ORDER BY o."createdAt" LIMIT 1) AS "activeOrderId"`;
-  if (rows.length === 0) throw new HttpError(404, 'Mesa no encontrada');
   const { activeOrderId, ...table } = rows[0];
   return { table, activeOrderId };
 };
@@ -242,6 +290,7 @@ export const lockOrder = async (tx: Tx, orderId: string): Promise<LockedOrder> =
   const rows = await tx.$queryRaw<LockedOrder[]>`
     SELECT o.status::text AS status,
            o."tableId",
+           -- hay algún pago (aunque la orden no esté saldada): impide cancelar
            EXISTS (SELECT 1 FROM "Payment" p WHERE p."orderId" = o.id) AS paid,
            (SELECT count(*)::int FROM "OrderItem" i WHERE i."orderId" = o.id) AS "itemCount",
            d.id AS "deliveryId",
@@ -283,17 +332,25 @@ export const decrementStock = async (
 
 // Libera la mesa (UN solo UPDATE) si estaba OCCUPIED y ya no le quedan órdenes activas.
 // Devuelve la mesa con la misma forma que Prisma, o null si no cambió.
-export const freeTableIfIdle = async (tx: Tx, tableId: string | null) => {
-  if (!tableId) return null;
-  const rows = await tx.$queryRaw<{ id: string; number: number; capacity: number; status: string }[]>`
+// Libera la mesa si ya no tiene órdenes activas y deshace su grupo (secundarias → AVAILABLE, sin unión),
+// en la misma transacción. Devuelve todas las mesas afectadas para emitir table:updated tras el commit.
+export const freeTableIfIdle = async (tx: Tx, tableId: string | null): Promise<TableEvent[]> => {
+  if (!tableId) return [];
+  const main = await tx.$queryRaw<TableEvent[]>`
     UPDATE "Table" t
        SET status = 'AVAILABLE'
      WHERE t.id = ${tableId}
        AND t.status = 'OCCUPIED'
        AND NOT EXISTS (SELECT 1 FROM "Order" o
                         WHERE o."tableId" = t.id AND o.status IN ('OPEN', 'IN_KITCHEN', 'SERVED'))
- RETURNING t.id, t.number, t.capacity, t.status::text AS status`;
-  return rows[0] ?? null;
+ RETURNING t.id, t.number, t.capacity, t.status::text AS status, t.active, t."mergedIntoId"`;
+  if (main.length === 0) return [];
+  const secondaries = await tx.$queryRaw<TableEvent[]>`
+    UPDATE "Table" t
+       SET status = 'AVAILABLE', "mergedIntoId" = NULL
+     WHERE t."mergedIntoId" = ${tableId}
+ RETURNING t.id, t.number, t.capacity, t.status::text AS status, t.active, t."mergedIntoId"`;
+  return [...main, ...secondaries];
 };
 
 export const assertActive = (status: OrderStatus) => {

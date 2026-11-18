@@ -24,6 +24,7 @@ enum TableStatus {
   OCCUPIED
   RESERVED
   CLEANING
+  MERGED // mesa secundaria unida a una principal (la orden vive en la principal)
 }
 
 enum OrderType {
@@ -66,17 +67,24 @@ model User {
   orders     Order[]
   deliveries Delivery[] @relation("EmployeeDeliveries")
   expenses   Expense[]
+  splitsCreated OrderSplit[] @relation("SplitCreatedBy")
   shiftsOpened CashShift[] @relation("ShiftOpenedBy")
   shiftsClosed CashShift[] @relation("ShiftClosedBy")
 }
 
 model Table {
-  id       String      @id @default(uuid())
-  number   Int         @unique
-  capacity Int
-  status   TableStatus @default(AVAILABLE)
+  id           String      @id @default(uuid())
+  number       Int         @unique
+  capacity     Int
+  status       TableStatus @default(AVAILABLE)
+  active       Boolean     @default(true) // false = desactivada (no aparece en el POS)
+  mergedIntoId String?                    // mesa principal del grupo (solo en secundarias)
 
-  orders Order[]
+  mergedInto   Table?  @relation("TableMerge", fields: [mergedIntoId], references: [id])
+  mergedTables Table[] @relation("TableMerge")
+  orders       Order[]
+
+  @@index([mergedIntoId])
 }
 
 model Category {
@@ -112,12 +120,16 @@ model Order {
   status       OrderStatus @default(OPEN)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+  paidAt    DateTime?   // se fija al saldarse toda la orden (fecha de venta en reportes)
 
-  table    Table?      @relation(fields: [tableId], references: [id])
-  user     User        @relation(fields: [userId], references: [id])
+  table    Table?       @relation(fields: [tableId], references: [id])
+  user     User         @relation(fields: [userId], references: [id])
   items    OrderItem[]
-  payment  Payment?
+  splits   OrderSplit[]
+  payments Payment[]
   delivery Delivery?
+
+  @@index([paidAt])
 }
 
 model OrderItem {
@@ -130,19 +142,59 @@ model OrderItem {
   notes     String?
   createdAt DateTime @default(now()) // orden cronológico de las rondas
 
-  order   Order   @relation(fields: [orderId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
+  order      Order            @relation(fields: [orderId], references: [id])
+  product    Product          @relation(fields: [productId], references: [id])
+  splitItems OrderSplitItem[]
 }
 
-model Payment {
-  id          String        @id @default(uuid())
-  orderId     String        @unique
-  method      PaymentMethod
-  amount      Decimal       @db.Decimal(10, 2)
-  changeGiven Decimal?      @db.Decimal(10, 2)
-  paidAt      DateTime      @default(now())
+// Cuenta: grupo de unidades de la orden que se cobra junto (cobrar todo = una cuenta con todo lo restante)
+model OrderSplit {
+  id          String   @id @default(uuid())
+  orderId     String
+  label       String?
+  amount      Decimal  @db.Decimal(10, 2) // subtotal de sus unidades (+ cargo de envío si es la cuenta de una entrega)
+  createdById String
+  createdAt   DateTime @default(now())
 
-  order Order @relation(fields: [orderId], references: [id])
+  order     Order            @relation(fields: [orderId], references: [id])
+  createdBy User             @relation("SplitCreatedBy", fields: [createdById], references: [id])
+  items     OrderSplitItem[]
+  payments  Payment[]
+
+  @@index([orderId])
+}
+
+model OrderSplitItem {
+  id          String @id @default(uuid())
+  splitId     String
+  orderItemId String
+  quantity    Int    // > 0 (validado en la API)
+
+  split     OrderSplit @relation(fields: [splitId], references: [id])
+  orderItem OrderItem  @relation(fields: [orderItemId], references: [id])
+
+  @@index([splitId])
+  @@index([orderItemId])
+}
+
+// Porción de una cuenta pagada con un método. amount = lo aplicado (nunca lo recibido);
+// amountReceived y changeGiven solo en efectivo.
+model Payment {
+  id             String        @id @default(uuid())
+  orderId        String
+  splitId        String
+  method         PaymentMethod
+  amount         Decimal       @db.Decimal(10, 2)
+  amountReceived Decimal?      @db.Decimal(10, 2)
+  changeGiven    Decimal?      @db.Decimal(10, 2)
+  paidAt         DateTime      @default(now())
+
+  order Order      @relation(fields: [orderId], references: [id])
+  split OrderSplit @relation(fields: [splitId], references: [id])
+
+  @@index([orderId])
+  @@index([splitId])
+  @@index([paidAt])
 }
 
 model Delivery {

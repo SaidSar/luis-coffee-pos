@@ -52,7 +52,7 @@ export default function OrderStatusBar({ order, role, statusPending, statusError
             <>
               <button type="button" onClick={onPay} disabled={statusPending} className={btnPrimary}>
                 <Banknote size={16} aria-hidden="true" />
-                Cobrar
+                {order.splits?.length ? 'Cobrar restante' : 'Cobrar'}
               </button>
               <button type="button" onClick={onCancel} disabled={statusPending} className={btnOutlineDanger}>
                 <Ban size={16} aria-hidden="true" />

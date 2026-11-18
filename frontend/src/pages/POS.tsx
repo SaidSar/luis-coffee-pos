@@ -18,7 +18,7 @@ import ConfirmCancelDialog from '../components/pos/ConfirmCancelDialog';
 import {
   validateDelivery, deliveryErrorsFromServer, type DeliveryErrors, type DeliveryField,
 } from '../components/pos/deliveryValidation';
-import { canTakeOrders, isActiveOrder, centsToMXN } from '../components/pos/posUi';
+import { canTakeOrders, isActiveOrder, centsToMXN, tableLabel } from '../components/pos/posUi';
 import CashClosedNotice from '../components/cash/CashClosedNotice';
 
 const ACTIVE = ['OPEN', 'IN_KITCHEN', 'SERVED'] as const;
@@ -70,7 +70,7 @@ export default function POS() {
   const deliveryMode  = orderType === 'DELIVERY';
 
   const contextLabel = selectedTable
-    ? `Mesa ${selectedTable.number}`
+    ? tableLabel(selectedTable)
     : takeoutMode
       ? (order.data ? `Para llevar #${order.data.ticketNumber}` : 'Para llevar (nueva)')
       : deliveryMode
@@ -93,8 +93,8 @@ export default function POS() {
     setCurrentOrderId(t.activeOrder?.id ?? null);
     resetMutations();
     announce(t.activeOrder
-      ? `Mesa ${t.number} seleccionada, ticket ${t.activeOrder.ticketNumber}`
-      : `Mesa ${t.number} seleccionada, nueva orden`);
+      ? `${tableLabel(t)} seleccionada, ticket ${t.activeOrder.ticketNumber}`
+      : `${tableLabel(t)} seleccionada, nueva orden`);
   };
 
   const newTakeout = () => {
@@ -223,10 +223,11 @@ export default function POS() {
   const newMode = !selectedTable && (takeoutMode || deliveryMode) ? orderType as 'TAKEOUT' | 'DELIVERY' : null;
 
   return (
-    <div className="pb-20 lg:pb-0 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+    // lg+: altura fija (viewport dinámico − header 4rem − padding del main 3rem) y un scroll por panel
+    <div className="pb-20 lg:pb-0 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[minmax(0,1fr)] lg:h-[calc(100dvh-7rem)] lg:min-h-0 lg:overflow-hidden">
       <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
 
-      <div className="flex flex-col gap-4 min-w-0">
+      <div className="flex flex-col gap-4 min-w-0 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:p-1 lg:-m-1">
         <CashClosedNotice variant="banner" />
         <TableGrid
           tables={tables.data}
@@ -242,11 +243,12 @@ export default function POS() {
           onNewTakeout={newTakeout}
           onNewDelivery={newDelivery}
           onSelectOrder={selectActiveOrder}
+          announce={announce}
         />
         <ProductPicker disabled={!canEdit} onAdd={handleAdd} />
       </div>
 
-      <div className="lg:sticky lg:top-0">
+      <div className="lg:min-h-0 lg:h-full">
         <TicketPanel
           contextLabel={contextLabel}
           order={currentOrder}

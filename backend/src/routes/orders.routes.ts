@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import {
-  getOrders, getOrder, createOrder, addItems, updateItem, deleteItem, updateStatus, payOrder,
+  getOrders, getOrder, createOrder, addItems, updateItem, deleteItem, updateStatus,
 } from '../controllers/orders.controller';
+import { payOrder, paySplitHandler } from '../controllers/payments.controller';
 import { authenticate, authorize } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -17,6 +18,7 @@ router.patch('/:id/items/:itemId',   ...staff,   updateItem);
 router.delete('/:id/items/:itemId',  ...staff,   deleteItem);
 // CANCELLED además se restringe a ADMIN y CASHIER dentro del controlador
 router.patch('/:id/status',          ...staff,   updateStatus);
-router.post('/:id/payment',          ...cashier, payOrder);
+router.post('/:id/payment',          ...cashier, payOrder);        // cobrar todo (cuerpo anterior o payments[])
+router.post('/:id/splits/pay',       ...cashier, paySplitHandler); // cobrar una cuenta
 
 export default router;

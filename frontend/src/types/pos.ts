@@ -1,7 +1,7 @@
 // Tipos del Punto de Venta según el schema y las respuestas reales de /api/tables y /api/orders.
 // Los Decimal de Prisma llegan como string.
 
-export type TableStatus   = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING';
+export type TableStatus   = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING' | 'MERGED';
 export type OrderType     = 'DINE_IN' | 'TAKEOUT' | 'DELIVERY';
 export type OrderStatus   = 'OPEN' | 'IN_KITCHEN' | 'SERVED' | 'PAID' | 'CANCELLED';
 export type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER';
@@ -48,6 +48,10 @@ export interface Table {
   capacity:    number;
   status:      TableStatus;
   activeOrder: ActiveOrderRef | null;
+  active:           boolean;
+  mergedIntoId:     string | null; // en secundarias: id de la principal
+  mergedIntoNumber: number | null; // en secundarias: número de la principal
+  mergedNumbers:    number[];      // en la principal: números de sus secundarias
 }
 
 export interface OrderItem {
@@ -59,15 +63,30 @@ export interface OrderItem {
   notes:     string | null;
   lineTotal: string;
   product:   { id: string; name: string };
+  paidQuantity: number; // unidades ya incluidas en cuentas cobradas
+  remaining:    number; // unidades pendientes de cobro
 }
 
+// Porción de una cuenta pagada con un método (amount = lo aplicado; recibido y cambio solo en efectivo)
 export interface Payment {
-  id:          string;
-  orderId:     string;
-  method:      PaymentMethod;
-  amount:      string;
-  changeGiven: string | null;
-  paidAt:      string;
+  id:             string;
+  orderId:        string;
+  splitId:        string;
+  method:         PaymentMethod;
+  amount:         string;
+  amountReceived: string | null;
+  changeGiven:    string | null;
+  paidAt:         string;
+}
+
+export interface OrderSplit {
+  id:        string;
+  number:    number;        // Cuenta 1, 2, 3...
+  label:     string | null;
+  amount:    string;
+  createdAt: string;
+  items:     { orderItemId: string; quantity: number }[];
+  payments:  Payment[];
 }
 
 export interface Order {
@@ -83,7 +102,12 @@ export interface Order {
   items:        OrderItem[];
   table:        { id: string; number: number } | null;
   user:         { id: string; name: string };
-  payment:      Payment | null;
+  payment:      Payment | null; // compatibilidad: último pago registrado
+  payments:     Payment[];
+  splits:       OrderSplit[];
+  paidAmount:   string;
+  balance:      string;         // lo que falta por cobrar
+  paid:         boolean;
   delivery:     Delivery | null;
   itemsTotal:   string; // solo productos
   total:        string; // productos + cargo de envío (calculado en el servidor)
@@ -130,7 +154,20 @@ export interface DeliveryCard {
 
 export interface DeliveryList { items: DeliveryCard[]; count: number; limit: number; offset: number }
 
-export interface PayOrderInput {
-  method:         PaymentMethod;
-  amountReceived: string;
+export interface PaymentLineInput {
+  method:          PaymentMethod;
+  amount:          string;
+  amountReceived?: string; // solo efectivo
 }
+
+// Cobrar todo lo restante
+export interface PayOrderInput { payments: PaymentLineInput[] }
+
+// Cobrar una cuenta con unidades elegidas
+export interface PaySplitInput {
+  items:    { orderItemId: string; quantity: number }[];
+  label?:   string;
+  payments: PaymentLineInput[];
+}
+
+export type PaidOrder = Order & { lastSplitId: string };
