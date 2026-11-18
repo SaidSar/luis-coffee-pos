@@ -7,6 +7,7 @@ export interface Expense {
   description: string;
   category:    ExpenseCategory;
   notes:       string | null;
+  paidFromCash: boolean; // salió del efectivo de la caja (resta en el corte)
   amount:      number;
   user:        { id: string; name: string };
 }
@@ -27,4 +28,5 @@ export interface ExpenseInput {
   category:    ExpenseCategory;
   date:        string;
   notes:       string;
+  paidFromCash: boolean;
 }

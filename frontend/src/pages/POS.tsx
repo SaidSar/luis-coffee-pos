@@ -19,6 +19,7 @@ import {
   validateDelivery, deliveryErrorsFromServer, type DeliveryErrors, type DeliveryField,
 } from '../components/pos/deliveryValidation';
 import { canTakeOrders, isActiveOrder, centsToMXN } from '../components/pos/posUi';
+import CashClosedNotice from '../components/cash/CashClosedNotice';
 
 const ACTIVE = ['OPEN', 'IN_KITCHEN', 'SERVED'] as const;
 const NBSP   = String.fromCharCode(160); // fuerza a re-anunciar un mensaje idéntico
@@ -226,6 +227,7 @@ export default function POS() {
       <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
 
       <div className="flex flex-col gap-4 min-w-0">
+        <CashClosedNotice variant="banner" />
         <TableGrid
           tables={tables.data}
           isLoading={tables.isLoading}

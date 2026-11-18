@@ -90,6 +90,17 @@ const shiftView = (s: ShiftWithUsers, showExpected: boolean) => ({
 
 const resultOf = (diff: Prisma.Decimal) => (diff.isZero() ? 'EVEN' : diff.gt(0) ? 'OVER' : 'SHORT');
 
+// ── GET /api/cash/status ─────────────────────────────────────
+// Solo si hay un turno abierto (sin montos): lo usan el POS y el encabezado, también para meseros
+export const getStatus = async (_req: Request, res: Response) => {
+  try {
+    const open = await prisma.cashShift.findFirst({ where: { closedAt: null }, select: { openedAt: true } });
+    res.json({ open: !!open, openedAt: open?.openedAt ?? null });
+  } catch (err) {
+    sendError(res, err, 'getCashStatus');
+  }
+};
+
 // ── GET /api/cash/current ────────────────────────────────────
 export const getCurrent = async (req: Request, res: Response) => {
   try {
@@ -163,7 +174,7 @@ export const closeShift = async (req: Request, res: Response) => {
       ...out.t.view,
       result: resultOf(out.difference),
       pendingOrders: out.pending,
-      ...(out.pending > 0 ? { warning: `Quedaron ${out.pending} órdenes sin cobrar al cerrar la caja` } : {}),
+      ...(out.pending > 0 ? { warning: out.pending === 1 ? 'Quedó 1 orden sin cobrar al cerrar la caja' : `Quedaron ${out.pending} órdenes sin cobrar al cerrar la caja` } : {}),
     });
   } catch (err) {
     sendError(res, err, 'closeShift');

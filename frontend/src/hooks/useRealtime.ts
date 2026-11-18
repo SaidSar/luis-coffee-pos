@@ -8,6 +8,7 @@ import type { Order, Table, TableStatus } from '../types/pos';
 //   order:created | order:updated | order:paid → vista completa de la orden (con id, tableId, status, ticketNumber)
 //   table:updated                              → { id, number, capacity, status }
 //   delivery:updated                           → { id, orderId, ticketNumber, status, orderStatus, paid }
+//   cash:updated                               → { open, shiftId }
 const DEBOUNCE_MS = 150;
 const ACTIVE = new Set(['OPEN', 'IN_KITCHEN', 'SERVED']);
 
@@ -67,6 +68,8 @@ export function useRealtime() {
         timer = null;
         qc.invalidateQueries({ queryKey: ['tables'] });
         qc.invalidateQueries({ queryKey: ['orders'] });
+        // Cobros y órdenes cambian los totales y pendientes de la caja
+        qc.invalidateQueries({ queryKey: ['cash'] });
         if (withProducts) qc.invalidateQueries({ queryKey: ['products'] });
         if (withDeliveries) qc.invalidateQueries({ queryKey: ['deliveries'] });
         withProducts = false;
@@ -88,6 +91,7 @@ export function useRealtime() {
     };
     // Entregas: invalida tablero y órdenes (el payload es parcial, no se parchea la caché)
     const onDelivery = () => scheduleInvalidate(false, true);
+    const onCash = () => scheduleInvalidate();
     // Al reconectar se pudieron perder eventos: resincroniza todo
     const onConnect = () => {
       if (hadConnection) scheduleInvalidate(true, true);
@@ -99,6 +103,7 @@ export function useRealtime() {
     socket.on('order:paid',    onPaid);
     socket.on('table:updated', onTable);
     socket.on('delivery:updated', onDelivery);
+    socket.on('cash:updated', onCash);
     socket.on('connect',       onConnect);
 
     return () => {
@@ -107,6 +112,7 @@ export function useRealtime() {
       socket.off('order:paid',    onPaid);
       socket.off('table:updated', onTable);
       socket.off('delivery:updated', onDelivery);
+      socket.off('cash:updated', onCash);
       socket.off('connect',       onConnect);
       if (timer) clearTimeout(timer);
     };

@@ -12,12 +12,13 @@ export const useExpenses = (q: ExpenseQuery) =>
     placeholderData: keepPreviousData,
   });
 
-// Cualquier cambio en gastos altera la utilidad: se invalidan gastos y reportes
+// Cualquier cambio en gastos altera la utilidad y la caja: se invalidan gastos, reportes y caja
 const useInvalidate = () => {
   const qc = useQueryClient();
   return () => {
     qc.invalidateQueries({ queryKey: EXPENSES });
     qc.invalidateQueries({ queryKey: REPORTS });
+    qc.invalidateQueries({ queryKey: ['cash'] }); // un gasto pagado de caja cambia el turno abierto
   };
 };
 
