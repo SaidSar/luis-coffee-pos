@@ -8,6 +8,10 @@ uploads/
 # Carpetas locales de herramientas y temporales
 .claude/
 backend/.claude/
+.agents/
+backend/.agents/
+.windsurf/
+backend/.windsurf/
 *.bundle
 *.xlsx
 scratch/
