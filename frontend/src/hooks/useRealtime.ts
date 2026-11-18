@@ -6,7 +6,7 @@ import type { Order, Table, TableStatus } from '../types/pos';
 
 // Eventos reales del backend (services/socket.service.ts):
 //   order:created | order:updated | order:paid → vista completa de la orden (con id, tableId, status, ticketNumber)
-//   table:updated                              → { id, number, capacity, status }
+//   table:updated                              → { id, number, capacity, status, active, mergedIntoId }
 //   delivery:updated                           → { id, orderId, ticketNumber, status, orderStatus, paid }
 //   cash:updated                               → { open, shiftId }
 const DEBOUNCE_MS = 150;
@@ -16,7 +16,7 @@ const isOrder = (v: unknown): v is Order =>
   typeof v === 'object' && v !== null && typeof (v as Order).id === 'string'
   && typeof (v as Order).status === 'string' && typeof (v as Order).ticketNumber === 'number';
 
-const isTableUpdate = (v: unknown): v is Pick<Table, 'id' | 'status'> =>
+const isTableUpdate = (v: unknown): v is TableUpdate =>
   typeof v === 'object' && v !== null && typeof (v as Table).id === 'string' && typeof (v as Table).status === 'string';
 
 // Aplica el payload a la caché para que la UI cambie al instante (luego se refetchea por consistencia)
@@ -31,9 +31,26 @@ const patchOrder = (qc: QueryClient, order: Order) => {
   }));
 };
 
-const patchTable = (qc: QueryClient, table: Pick<Table, 'id' | 'status'>) => {
-  qc.setQueryData<Table[]>(['tables'], (tables) =>
-    tables?.map((t) => (t.id === table.id ? { ...t, status: table.status as TableStatus } : t)));
+// table:updated trae status, active y mergedIntoId: se aplican y se recalculan los grupos
+// (números de la principal y de las secundarias) para no mostrar un estado intermedio inconsistente
+type TableUpdate = Pick<Table, 'id' | 'status'> & Partial<Pick<Table, 'active' | 'mergedIntoId'>>;
+const patchTable = (qc: QueryClient, upd: TableUpdate) => {
+  qc.setQueryData<Table[]>(['tables'], (tables) => {
+    if (!tables) return tables;
+    const patched = tables
+      .map((t) => (t.id === upd.id ? {
+        ...t,
+        status: upd.status as TableStatus,
+        ...(upd.active !== undefined ? { active: upd.active } : {}),
+        ...(upd.mergedIntoId !== undefined ? { mergedIntoId: upd.mergedIntoId } : {}),
+      } : t))
+      .filter((t) => t.active !== false); // la lista del POS solo tiene mesas activas
+    return patched.map((t) => ({
+      ...t,
+      mergedIntoNumber: t.mergedIntoId ? patched.find((p) => p.id === t.mergedIntoId)?.number ?? t.mergedIntoNumber : null,
+      mergedNumbers: patched.filter((x) => x.mergedIntoId === t.id).map((x) => x.number).sort((a, b) => a - b),
+    }));
+  });
 };
 
 // Montar UNA vez en el layout protegido. Abre el socket con sesión y lo cierra al cerrar sesión.

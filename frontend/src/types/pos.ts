@@ -1,7 +1,7 @@
 // Tipos del Punto de Venta según el schema y las respuestas reales de /api/tables y /api/orders.
 // Los Decimal de Prisma llegan como string.
 
-export type TableStatus   = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING';
+export type TableStatus   = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING' | 'MERGED';
 export type OrderType     = 'DINE_IN' | 'TAKEOUT' | 'DELIVERY';
 export type OrderStatus   = 'OPEN' | 'IN_KITCHEN' | 'SERVED' | 'PAID' | 'CANCELLED';
 export type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER';
@@ -48,6 +48,10 @@ export interface Table {
   capacity:    number;
   status:      TableStatus;
   activeOrder: ActiveOrderRef | null;
+  active:           boolean;
+  mergedIntoId:     string | null; // en secundarias: id de la principal
+  mergedIntoNumber: number | null; // en secundarias: número de la principal
+  mergedNumbers:    number[];      // en la principal: números de sus secundarias
 }
 
 export interface OrderItem {

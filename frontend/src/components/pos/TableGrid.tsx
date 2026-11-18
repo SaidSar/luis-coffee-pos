@@ -1,7 +1,9 @@
-import { ShoppingBag, Bike, Loader2, type LucideIcon } from 'lucide-react';
+import { useState } from 'react';
+import { ShoppingBag, Bike, Loader2, Settings2, type LucideIcon } from 'lucide-react';
 import type { Order, Table } from '../../types/pos';
 import { describeApiError } from '../../lib/apiError';
-import { tableStatusMeta, orderStatusMeta, focusRing, btnSecondary } from './posUi';
+import { tableStatusMeta, orderStatusMeta, focusRing, btnSecondary, tableLabel } from './posUi';
+import TableAdminPanel from './TableAdminPanel';
 
 interface Props {
   tables:          Table[] | undefined;
@@ -17,6 +19,7 @@ interface Props {
   onNewTakeout:    () => void;
   onNewDelivery:   () => void;
   onSelectOrder:   (order: Order) => void;
+  announce:        (msg: string) => void;
 }
 
 // Lista de órdenes activas sin mesa (para llevar o a domicilio)
@@ -55,14 +58,25 @@ function ActiveOrderList({ title, icon: TypeIcon, orders, currentOrderId, onSele
 
 export default function TableGrid({
   tables, isLoading, error, onRetry, selectedTableId, newMode,
-  takeoutOrders, deliveryOrders, currentOrderId, onSelectTable, onNewTakeout, onNewDelivery, onSelectOrder,
+  takeoutOrders, deliveryOrders, currentOrderId, onSelectTable, onNewTakeout, onNewDelivery, onSelectOrder, announce,
 }: Props) {
+  const [admin, setAdmin] = useState(false);
   const newPressed = (m: 'TAKEOUT' | 'DELIVERY') => newMode === m && !currentOrderId;
   return (
     <section aria-labelledby="pos-tables-title" className="bg-white rounded-2xl border border-caramel/10 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 id="pos-tables-title" className="text-sm font-semibold text-espresso">Mesas</h2>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setAdmin((v) => !v)}
+            aria-pressed={admin}
+            aria-controls="pos-tables-body"
+            className={`${btnSecondary} ${admin ? 'ring-2 ring-caramel-dark' : ''}`}
+          >
+            <Settings2 size={16} aria-hidden="true" />
+            {admin ? 'Terminar' : 'Administrar mesas'}
+          </button>
           <button
             type="button"
             onClick={onNewTakeout}
@@ -84,6 +98,9 @@ export default function TableGrid({
         </div>
       </div>
 
+      <div id="pos-tables-body">
+      {admin && tables && <TableAdminPanel tables={tables} announce={announce} />}
+
       {isLoading && (
         <p className="flex items-center gap-2 text-sm text-espresso/70 py-4" role="status">
           <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Cargando mesas...
@@ -101,20 +118,24 @@ export default function TableGrid({
         <p className="text-sm text-espresso/70 py-4">No hay mesas registradas. Un administrador puede crearlas.</p>
       )}
 
-      {!!tables?.length && (
+      {!admin && !!tables?.length && (
         <ul className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-4 gap-2">
           {tables.map((t) => {
-            const meta     = tableStatusMeta[t.status];
-            const Icon     = meta.icon;
-            const selected = selectedTableId === t.id;
-            const ticket   = t.activeOrder ? `, ticket ${t.activeOrder.ticketNumber}` : '';
+            const meta      = tableStatusMeta[t.status];
+            const Icon      = meta.icon;
+            const selected  = selectedTableId === t.id;
+            const ticket    = t.activeOrder ? `, ticket ${t.activeOrder.ticketNumber}` : '';
+            const secondary = !!t.mergedIntoId; // unida a otra: se usa desde la principal
             return (
               <li key={t.id}>
                 <button
                   type="button"
                   onClick={() => onSelectTable(t)}
-                  aria-pressed={selected}
-                  aria-label={`Mesa ${t.number}, ${meta.label}${ticket}`}
+                  disabled={secondary}
+                  aria-pressed={secondary ? undefined : selected}
+                  aria-label={secondary
+                    ? `Mesa ${t.number}, unida a mesa ${t.mergedIntoNumber}`
+                    : `${tableLabel(t)}, ${meta.label}${ticket}`}
                   className={`
                     w-full min-h-16 rounded-xl border-2 px-2 py-2 flex flex-col items-center justify-center gap-0.5
                     transition-colors ${meta.className} ${focusRing}
@@ -122,9 +143,12 @@ export default function TableGrid({
                   `}
                 >
                   <span className="text-lg font-bold leading-none">{t.number}</span>
+                  {t.mergedNumbers.length > 0 && (
+                    <span className="text-[11px] font-semibold">+ {t.mergedNumbers.join(' + ')}</span>
+                  )}
                   <span className="flex items-center gap-1 text-xs font-medium">
                     <Icon size={12} aria-hidden="true" />
-                    {meta.label}
+                    {secondary ? `Unida a mesa ${t.mergedIntoNumber}` : meta.label}
                   </span>
                   {t.activeOrder && <span className="text-[11px] font-medium">#{t.activeOrder.ticketNumber}</span>}
                 </button>
@@ -133,6 +157,8 @@ export default function TableGrid({
           })}
         </ul>
       )}
+
+      </div>
 
       <ActiveOrderList title="Para llevar activas" icon={ShoppingBag} orders={takeoutOrders} currentOrderId={currentOrderId} onSelect={onSelectOrder} />
       <ActiveOrderList title="A domicilio activas" icon={Bike} orders={deliveryOrders} currentOrderId={currentOrderId} onSelect={onSelectOrder} />

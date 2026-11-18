@@ -34,7 +34,7 @@ const useCacheOrder = () => {
 // ── Consultas ─────────────────────────────────────────────────
 export const useTables = () => {
   const refetchInterval = useRefreshInterval();
-  return useQuery({ queryKey: TABLES, queryFn: tablesService.list, refetchInterval });
+  return useQuery({ queryKey: TABLES, queryFn: () => tablesService.list(), refetchInterval });
 };
 
 export const useOrders = (statuses?: OrderStatus[]) => {
@@ -107,4 +107,40 @@ export const usePayOrder = () => {
     onSuccess: cache,
     onSettled: () => invalidate(true),
   });
+};
+
+// ── Administración de mesas ───────────────────────────────────
+// Todas, incluidas las desactivadas (solo ADMIN)
+export const useAllTables = (enabled: boolean) =>
+  useQuery({ queryKey: [...TABLES, 'all'], queryFn: () => tablesService.list(true), enabled });
+
+const useInvalidateTables = () => {
+  const qc = useQueryClient();
+  return () => qc.invalidateQueries({ queryKey: TABLES });
+};
+
+export const useCreateTable = () => {
+  const invalidate = useInvalidateTables();
+  return useMutation({ mutationFn: (capacity: number) => tablesService.create({ capacity }), onSettled: invalidate });
+};
+
+export const useSetTableActive = () => {
+  const invalidate = useInvalidateTables();
+  return useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) => tablesService.update(id, { active }),
+    onSettled:  invalidate,
+  });
+};
+
+export const useMergeTables = () => {
+  const invalidate = useInvalidateTables();
+  return useMutation({
+    mutationFn: ({ id, tableIds }: { id: string; tableIds: number[] }) => tablesService.merge(id, tableIds),
+    onSettled:  invalidate,
+  });
+};
+
+export const useUnmergeTable = () => {
+  const invalidate = useInvalidateTables();
+  return useMutation({ mutationFn: (id: string) => tablesService.unmerge(id), onSettled: invalidate });
 };

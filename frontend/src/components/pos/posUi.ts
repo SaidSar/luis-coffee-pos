@@ -1,6 +1,6 @@
 import {
   CircleCheck, Users, CalendarClock, Sparkles,
-  ClipboardList, ChefHat, HandPlatter, CircleCheckBig, CircleX,
+  ClipboardList, ChefHat, HandPlatter, CircleCheckBig, CircleX, Link2,
   type LucideIcon,
 } from 'lucide-react';
 import type { TableStatus, OrderStatus, PaymentMethod } from '../../types/pos';
@@ -33,7 +33,12 @@ export const tableStatusMeta: Record<TableStatus, StatusMeta> = {
   OCCUPIED:  { label: 'Ocupada',   icon: Users,         className: 'bg-espresso border-espresso text-white' },
   RESERVED:  { label: 'Reservada', icon: CalendarClock, className: 'bg-amber/20 border-espresso/50 text-espresso' },
   CLEANING:  { label: 'Limpieza',  icon: Sparkles,      className: 'bg-cream border-espresso/50 text-espresso' },
+  MERGED:    { label: 'Unida',     icon: Link2,         className: 'bg-cream border-dashed border-espresso/50 text-espresso' },
 };
+
+// "Mesa 3 + 4 + 5" en la principal de un grupo
+export const tableLabel = (t: { number: number; mergedNumbers?: number[] }) =>
+  `Mesa ${[t.number, ...(t.mergedNumbers ?? [])].join(' + ')}`;
 
 export const orderStatusMeta: Record<OrderStatus, StatusMeta> = {
   OPEN:       { label: 'Abierta',   icon: ClipboardList,  className: 'bg-cream text-espresso' },

@@ -4,7 +4,14 @@ import type {
 } from '../types/pos';
 
 export const tablesService = {
-  list: () => api.get<Table[]>('/tables').then(r => r.data),
+  list: (includeInactive = false) =>
+    api.get<Table[]>('/tables', { params: includeInactive ? { includeInactive: 'true' } : undefined }).then(r => r.data),
+  create:  (input: { number?: number; capacity?: number }) => api.post<Table>('/tables', input).then(r => r.data),
+  update:  (id: string, input: { active?: boolean; capacity?: number; number?: number }) =>
+    api.patch<Table>(`/tables/${id}`, input).then(r => r.data),
+  // tableIds: números de las mesas a unir a la principal
+  merge:   (id: string, tableIds: number[]) => api.post<Table[]>(`/tables/${id}/merge`, { tableIds }).then(r => r.data),
+  unmerge: (id: string) => api.post<Table[]>(`/tables/${id}/unmerge`).then(r => r.data),
 };
 
 export const ordersService = {

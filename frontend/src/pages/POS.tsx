@@ -18,7 +18,7 @@ import ConfirmCancelDialog from '../components/pos/ConfirmCancelDialog';
 import {
   validateDelivery, deliveryErrorsFromServer, type DeliveryErrors, type DeliveryField,
 } from '../components/pos/deliveryValidation';
-import { canTakeOrders, isActiveOrder, centsToMXN } from '../components/pos/posUi';
+import { canTakeOrders, isActiveOrder, centsToMXN, tableLabel } from '../components/pos/posUi';
 import CashClosedNotice from '../components/cash/CashClosedNotice';
 
 const ACTIVE = ['OPEN', 'IN_KITCHEN', 'SERVED'] as const;
@@ -70,7 +70,7 @@ export default function POS() {
   const deliveryMode  = orderType === 'DELIVERY';
 
   const contextLabel = selectedTable
-    ? `Mesa ${selectedTable.number}`
+    ? tableLabel(selectedTable)
     : takeoutMode
       ? (order.data ? `Para llevar #${order.data.ticketNumber}` : 'Para llevar (nueva)')
       : deliveryMode
@@ -93,8 +93,8 @@ export default function POS() {
     setCurrentOrderId(t.activeOrder?.id ?? null);
     resetMutations();
     announce(t.activeOrder
-      ? `Mesa ${t.number} seleccionada, ticket ${t.activeOrder.ticketNumber}`
-      : `Mesa ${t.number} seleccionada, nueva orden`);
+      ? `${tableLabel(t)} seleccionada, ticket ${t.activeOrder.ticketNumber}`
+      : `${tableLabel(t)} seleccionada, nueva orden`);
   };
 
   const newTakeout = () => {
@@ -243,6 +243,7 @@ export default function POS() {
           onNewTakeout={newTakeout}
           onNewDelivery={newDelivery}
           onSelectOrder={selectActiveOrder}
+          announce={announce}
         />
         <ProductPicker disabled={!canEdit} onAdd={handleAdd} />
       </div>
