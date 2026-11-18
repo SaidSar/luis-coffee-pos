@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tablesService, ordersService } from '../services/posService';
 import { useRealtimeStore } from '../stores/realtimeStore';
-import type { Order, CreateOrderInput, OrderItemInput, OrderStatus, OrderStatusChange, PayOrderInput } from '../types/pos';
+import type { Order, CreateOrderInput, OrderItemInput, OrderStatus, OrderStatusChange, PayOrderInput, PaySplitInput } from '../types/pos';
 
 const TABLES   = ['tables'] as const;
 const ORDERS   = ['orders'] as const;
@@ -101,11 +101,25 @@ export const useCancelOrder = () => {
 export const usePayOrder = () => {
   const invalidate = useInvalidatePos();
   const cache      = useCacheOrder();
+  const qc         = useQueryClient();
   return useMutation({
     mutationFn: ({ orderId, input }: { orderId: string; input: PayOrderInput }) =>
       ordersService.pay(orderId, input),
     onSuccess: cache,
-    onSettled: () => invalidate(true),
+    onSettled: () => { invalidate(true); qc.invalidateQueries({ queryKey: ['deliveries'] }); qc.invalidateQueries({ queryKey: ['cash'] }); },
+  });
+};
+
+// Cobrar una cuenta (unidades elegidas); también descuenta stock de esas unidades
+export const usePaySplit = () => {
+  const invalidate = useInvalidatePos();
+  const cache      = useCacheOrder();
+  const qc         = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, input }: { orderId: string; input: PaySplitInput }) =>
+      ordersService.paySplit(orderId, input),
+    onSuccess: cache,
+    onSettled: () => { invalidate(true); qc.invalidateQueries({ queryKey: ['cash'] }); },
   });
 };
 

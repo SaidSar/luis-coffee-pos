@@ -66,4 +66,5 @@ export const MONEY_RE = /^\d+(\.\d{1,2})?$/;
 
 // Aritmética en centavos para evitar errores de coma flotante al mostrar
 export const toCents = (v: string | number) => Math.round(parseFloat(String(v)) * 100);
-export const centsToMXN = (c: number) => `$${(c / 100).toFixed(2)}`;
+const mxn = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+export const centsToMXN = (c: number) => mxn.format(c / 100);

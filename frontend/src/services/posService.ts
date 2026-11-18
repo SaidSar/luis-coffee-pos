@@ -1,6 +1,6 @@
 import api from './api';
 import type {
-  Table, Order, OrderStatus, OrderStatusChange, CreateOrderInput, OrderItemInput, PayOrderInput,
+  Table, Order, OrderStatus, OrderStatusChange, CreateOrderInput, OrderItemInput, PayOrderInput, PaySplitInput, PaidOrder,
 } from '../types/pos';
 
 export const tablesService = {
@@ -31,5 +31,8 @@ export const ordersService = {
     api.patch<Order>(`/orders/${id}/status`, { status }).then(r => r.data),
 
   pay: (id: string, input: PayOrderInput) =>
-    api.post<Order>(`/orders/${id}/payment`, input).then(r => r.data),
+    api.post<PaidOrder>(`/orders/${id}/payment`, input).then(r => r.data),
+
+  paySplit: (id: string, input: PaySplitInput) =>
+    api.post<PaidOrder>(`/orders/${id}/splits/pay`, input).then(r => r.data),
 };

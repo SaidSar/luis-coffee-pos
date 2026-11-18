@@ -5,7 +5,7 @@ import type { Order } from '../../types/pos';
 import type { ApiErrorInfo } from '../../lib/apiError';
 import { formatMXN } from '../../types';
 import { useMediaQuery, LG_QUERY } from '../../hooks/useMediaQuery';
-import { btnPrimary, focusRing, inputBase, toCents, centsToMXN } from './posUi';
+import { btnPrimary, focusRing, inputBase, toCents, centsToMXN, paymentMethodLabel } from './posUi';
 import DeliveryForm from './DeliveryForm';
 import type { DeliveryErrors, DeliveryField } from './deliveryValidation';
 
@@ -121,8 +121,24 @@ export default function TicketPanel({
                   <span>
                     {i.quantity} × {i.product.name}
                     {i.notes && <span className="block text-xs text-espresso/70">Nota: {i.notes}</span>}
+                    {i.paidQuantity > 0 && (
+                      <span className="block text-xs font-medium text-green-800">{i.paidQuantity} de {i.quantity} cobrada{i.paidQuantity === 1 ? '' : 's'}</span>
+                    )}
                   </span>
                   <span className="font-medium">{formatMXN(i.lineTotal)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {order && order.splits.length > 0 && (
+          <div>
+            <h3 className="text-xs font-semibold text-espresso/70 uppercase tracking-wide mb-1">Cuentas cobradas</h3>
+            <ul className="text-sm text-espresso divide-y divide-espresso/10">
+              {order.splits.map((s) => (
+                <li key={s.id} className="py-1.5">
+                  Cuenta {s.number}{s.label ? ` (${s.label})` : ''} · {formatMXN(s.amount)} · {[...new Set(s.payments.map((p) => paymentMethodLabel[p.method]))].join(' + ')}
                 </li>
               ))}
             </ul>
@@ -227,6 +243,12 @@ export default function TicketPanel({
               <div className="flex justify-between">
                 <dt>Total de la orden</dt><dd className="font-semibold">{formatMXN(order.total)}</dd>
               </div>
+            )}
+            {order && order.splits.length > 0 && !order.paid && (
+              <>
+                <div className="flex justify-between"><dt>Cobrado</dt><dd>{formatMXN(order.paidAmount)}</dd></div>
+                <div className="flex justify-between font-semibold"><dt>Pendiente por cobrar</dt><dd>{formatMXN(order.balance)}</dd></div>
+              </>
             )}
             {showDeliveryForm && draftTotal > 0 && (
               <>
