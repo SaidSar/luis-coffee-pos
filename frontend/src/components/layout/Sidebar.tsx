@@ -20,7 +20,7 @@ const navItems: NavItem[] = [
   { label: 'Punto de venta', path: '/pos',        icon: ShoppingCart,     roles: ['ADMIN','CASHIER','WAITER'] },
   { label: 'Inventario',     path: '/inventory',  icon: Package                                  },
   { label: 'Empleados',      path: '/employees',  icon: Users,            roles: ['ADMIN']        },
-  { label: 'Entregas',       path: '/deliveries', icon: Truck                                    },
+  { label: 'Entregas',       path: '/deliveries', icon: Truck,            roles: ['ADMIN','CASHIER','WAITER'] },
   { label: 'Gastos',         path: '/expenses',   icon: Wallet,           roles: ['ADMIN']        },
   { label: 'Reportes',       path: '/reports',    icon: FileSpreadsheet,  roles: ['ADMIN']        },
 ];

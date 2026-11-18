@@ -7,6 +7,7 @@ import type { Order, Table, TableStatus } from '../types/pos';
 // Eventos reales del backend (services/socket.service.ts):
 //   order:created | order:updated | order:paid → vista completa de la orden (con id, tableId, status, ticketNumber)
 //   table:updated                              → { id, number, capacity, status }
+//   delivery:updated                           → { id, orderId, ticketNumber, status, orderStatus, paid }
 const DEBOUNCE_MS = 150;
 const ACTIVE = new Set(['OPEN', 'IN_KITCHEN', 'SERVED']);
 
@@ -54,18 +55,22 @@ export function useRealtime() {
     const socket = getSocket();
     let timer: ReturnType<typeof setTimeout> | null = null;
     let withProducts = false;
+    let withDeliveries = false;
     let hadConnection = socket.connected;
 
     // Agrupa ráfagas de eventos en una sola invalidación
-    const scheduleInvalidate = (products = false) => {
+    const scheduleInvalidate = (products = false, deliveries = false) => {
       withProducts ||= products;
+      withDeliveries ||= deliveries;
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
         qc.invalidateQueries({ queryKey: ['tables'] });
         qc.invalidateQueries({ queryKey: ['orders'] });
         if (withProducts) qc.invalidateQueries({ queryKey: ['products'] });
+        if (withDeliveries) qc.invalidateQueries({ queryKey: ['deliveries'] });
         withProducts = false;
+        withDeliveries = false;
       }, DEBOUNCE_MS);
     };
 
@@ -81,9 +86,11 @@ export function useRealtime() {
       if (isTableUpdate(payload)) patchTable(qc, payload);
       scheduleInvalidate();
     };
+    // Entregas: invalida tablero y órdenes (el payload es parcial, no se parchea la caché)
+    const onDelivery = () => scheduleInvalidate(false, true);
     // Al reconectar se pudieron perder eventos: resincroniza todo
     const onConnect = () => {
-      if (hadConnection) scheduleInvalidate(true);
+      if (hadConnection) scheduleInvalidate(true, true);
       hadConnection = true;
     };
 
@@ -91,6 +98,7 @@ export function useRealtime() {
     socket.on('order:updated', onOrder);
     socket.on('order:paid',    onPaid);
     socket.on('table:updated', onTable);
+    socket.on('delivery:updated', onDelivery);
     socket.on('connect',       onConnect);
 
     return () => {
@@ -98,6 +106,7 @@ export function useRealtime() {
       socket.off('order:updated', onOrder);
       socket.off('order:paid',    onPaid);
       socket.off('table:updated', onTable);
+      socket.off('delivery:updated', onDelivery);
       socket.off('connect',       onConnect);
       if (timer) clearTimeout(timer);
     };

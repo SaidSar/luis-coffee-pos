@@ -5,6 +5,8 @@ import type { Order } from '../../types/pos';
 import type { ApiErrorInfo } from '../../lib/apiError';
 import { formatMXN } from '../../types';
 import { btnPrimary, focusRing, inputBase, toCents, centsToMXN } from './posUi';
+import DeliveryForm from './DeliveryForm';
+import type { DeliveryErrors, DeliveryField } from './deliveryValidation';
 
 interface Props {
   contextLabel: string | null;      // "Mesa 3", "Para llevar" o null si no hay nada seleccionado
@@ -16,10 +18,13 @@ interface Props {
   sendError:    ApiErrorInfo | null;
   onSend:       () => void;
   statusBar:    ReactNode;          // barra de estado / acciones de la orden
+  deliveryErrors:        DeliveryErrors;
+  onDeliveryFieldChange: (f: DeliveryField) => void;
 }
 
 export default function TicketPanel({
   contextLabel, order, orderLoading, orderError, canEdit, sending, sendError, onSend, statusBar,
+  deliveryErrors, onDeliveryFieldChange,
 }: Props) {
   const items           = usePosDraftStore((s) => s.items);
   const orderType       = usePosDraftStore((s) => s.orderType);
@@ -33,9 +38,14 @@ export default function TicketPanel({
   // Panel inferior colapsable en móvil (en lg siempre visible)
   const [open, setOpen] = useState(false);
 
+  const deliveryFeeDraft = usePosDraftStore((s) => s.delivery.deliveryFee);
+
   const orderCents = order ? toCents(order.total) : 0;
-  const draftCents = Math.round(draftTotal * 100);
   const showCustomerField = orderType === 'TAKEOUT' && !order;
+  const showDeliveryForm  = orderType === 'DELIVERY' && !order;
+  // Cargo de envío del borrador (estimado; el oficial lo devuelve el servidor en order.total)
+  const feeDraftCents = showDeliveryForm && /^\d+(\.\d{1,2})?$/.test(deliveryFeeDraft.trim()) ? toCents(deliveryFeeDraft.trim()) : 0;
+  const draftCents = Math.round(draftTotal * 100) + (draftTotal > 0 ? feeDraftCents : 0);
 
   return (
     <aside
@@ -80,7 +90,7 @@ export default function TicketPanel({
         </h2>
 
         {!contextLabel && (
-          <p className="text-sm text-espresso/70">Selecciona una mesa o "Para llevar" para empezar.</p>
+          <p className="text-sm text-espresso/70">Selecciona una mesa, "Para llevar" o "A domicilio" para empezar.</p>
         )}
 
         {statusBar}
@@ -125,6 +135,15 @@ export default function TicketPanel({
               className={inputBase}
             />
           </div>
+        )}
+
+        {showDeliveryForm && <DeliveryForm errors={deliveryErrors} onFieldChange={onDeliveryFieldChange} />}
+
+        {order?.delivery && (
+          <p className="text-sm text-espresso">
+            <span className="font-semibold">Entrega:</span> {order.delivery.address}
+            {order.delivery.reference && <span className="block text-xs text-espresso/70">Ref.: {order.delivery.reference}</span>}
+          </p>
         )}
 
         {/* Borrador: nueva orden o nueva ronda */}
@@ -185,10 +204,22 @@ export default function TicketPanel({
         {/* Totales: el oficial es el del servidor; el borrador es estimado */}
         {contextLabel && (
           <dl className="border-t border-espresso/20 pt-3 text-sm text-espresso space-y-1">
+            {order?.delivery && (
+              <>
+                <div className="flex justify-between"><dt>Productos</dt><dd>{formatMXN(order.itemsTotal)}</dd></div>
+                <div className="flex justify-between"><dt>Cargo de envío</dt><dd>{formatMXN(order.delivery.deliveryFee)}</dd></div>
+              </>
+            )}
             {order && (
               <div className="flex justify-between">
                 <dt>Total de la orden</dt><dd className="font-semibold">{formatMXN(order.total)}</dd>
               </div>
+            )}
+            {showDeliveryForm && draftTotal > 0 && (
+              <>
+                <div className="flex justify-between"><dt>Productos (estimado)</dt><dd>{centsToMXN(Math.round(draftTotal * 100))}</dd></div>
+                <div className="flex justify-between"><dt>Cargo de envío</dt><dd>{centsToMXN(feeDraftCents)}</dd></div>
+              </>
             )}
             {draftCents > 0 && (
               <div className="flex justify-between">
