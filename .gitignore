@@ -12,6 +12,8 @@ backend/.claude/
 backend/.agents/
 .windsurf/
 backend/.windsurf/
+skills-lock.json
+backend/skills-lock.json
 *.bundle
 *.xlsx
 scratch/
