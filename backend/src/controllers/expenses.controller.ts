@@ -26,15 +26,20 @@ const notes = z.string().trim().max(500, { message: 'Máximo 500 caracteres' })
   .transform((s) => (s === '' ? null : s))
   .nullable();
 
-const createSchema = z.object({
+const baseSchema = z.object({
   description: z.string().trim().min(1, { message: 'La descripción es obligatoria' }).max(200, { message: 'Máximo 200 caracteres' }),
   amount,
   category:    z.enum(EXPENSE_CATEGORIES),
   date:        expenseDate,
   notes:       notes.optional(),
+  // Pagado con el efectivo de la caja: se resta del efectivo esperado del turno abierto
+  paidFromCash: z.boolean({ message: 'Indica sí o no' }),
 });
 
-const updateSchema = createSchema.partial()
+// El default solo aplica al crear; en PATCH un campo ausente no se toca
+const createSchema = baseSchema.extend({ paidFromCash: baseSchema.shape.paidFromCash.default(false) });
+
+const updateSchema = baseSchema.partial()
   .refine((d) => Object.keys(d).length > 0, { message: 'Indica al menos un campo' });
 
 const listSchema = withRangeRules(z.object({
@@ -55,6 +60,7 @@ const toView = (e: ExpenseWithUser) => ({
   description: e.description,
   category:    e.category,
   notes:       e.notes,
+  paidFromCash: e.paidFromCash,
   amount:      Number(e.amount),
   user:        e.user,
 });
@@ -69,10 +75,10 @@ export const listExpenses = async (req: Request, res: Response) => {
 
     const items = await prisma.$queryRaw<{
       id: string; date: string; description: string; category: string; notes: string | null;
-      amount: Prisma.Decimal; userId: string; userName: string;
+      amount: Prisma.Decimal; paidFromCash: boolean; userId: string; userName: string;
     }[]>`
       SELECT e.id, to_char(${local(Prisma.sql`e."expenseDate"`)}, 'YYYY-MM-DD') AS date,
-             e.description, e.category, e.notes, e.amount,
+             e.description, e.category, e.notes, e.amount, e."paidFromCash",
              u.id AS "userId", u.name AS "userName"
         FROM "Expense" e JOIN "User" u ON u.id = e."userId"
         ${where}
@@ -86,6 +92,7 @@ export const listExpenses = async (req: Request, res: Response) => {
     res.json({
       items: items.map((x) => ({
         id: x.id, date: x.date, description: x.description, category: x.category, notes: x.notes,
+        paidFromCash: x.paidFromCash,
         amount: Number(x.amount), user: { id: x.userId, name: x.userName },
       })),
       count:  agg.count,
@@ -110,6 +117,7 @@ export const createExpense = async (req: Request, res: Response) => {
         category:    body.category,
         expenseDate: mazatlanNoon(body.date),
         notes:       body.notes ?? null,
+        paidFromCash: body.paidFromCash,
       },
       include: withUser,
     });
@@ -132,6 +140,7 @@ export const updateExpense = async (req: Request, res: Response) => {
         ...(body.category    !== undefined ? { category: body.category } : {}),
         ...(body.date        !== undefined ? { expenseDate: mazatlanNoon(body.date) } : {}),
         ...(body.notes       !== undefined ? { notes: body.notes } : {}),
+        ...(body.paidFromCash !== undefined ? { paidFromCash: body.paidFromCash } : {}),
       },
       include: withUser,
     });

@@ -44,9 +44,10 @@ export const exportExcel = async (req: Request, res: Response) => {
     const employees  = await reports.byEmployee(q);
     const expenses   = await reports.expenses(q);
     const deliveries = await reports.deliveries(q);
+    const cashShifts = await reports.cashShifts(q);
     const inventory  = await reports.inventory();
 
-    const wb = buildReportWorkbook({ summary, groupBy: q.groupBy, sales, products, categories, payments, employees, expenses, deliveries, inventory });
+    const wb = buildReportWorkbook({ summary, groupBy: q.groupBy, sales, products, categories, payments, employees, expenses, deliveries, cashShifts, inventory });
     const filename = `luis-coffee-break_contabilidad_${q.from}_${q.to}.xlsx`;
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -3,7 +3,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import type { Role } from '@prisma/client';
 
-export type SocketEvent = 'order:created' | 'order:updated' | 'order:paid' | 'table:updated' | 'delivery:updated';
+export type SocketEvent = 'order:created' | 'order:updated' | 'order:paid' | 'table:updated' | 'delivery:updated' | 'cash:updated';
 
 let io: Server | null = null;
 

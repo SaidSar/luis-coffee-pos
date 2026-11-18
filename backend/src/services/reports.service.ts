@@ -108,6 +108,34 @@ export const deliveries = async (r: ReportRange): Promise<DeliveryRow[]> => {
   return rows.map((x) => ({ ...x, customer: x.customer ?? '', driver: x.driver ?? '', fee: money(x.fee) }));
 };
 
+// ── Cortes de caja: turnos cerrados en el periodo (por fecha de cierre, hora de Mazatlán) ──
+export interface CashShiftRow {
+  shift: string; openedBy: string; closedBy: string; openingFloat: number;
+  expectedCash: number; countedCash: number; difference: number; notes: string;
+}
+
+export const cashShifts = async (r: ReportRange): Promise<CashShiftRow[]> => {
+  const rows = await prisma.$queryRaw<{
+    shift: string; openedBy: string; closedBy: string | null; openingFloat: Prisma.Decimal;
+    expectedCash: Prisma.Decimal | null; countedCash: Prisma.Decimal | null; difference: Prisma.Decimal | null; notes: string | null;
+  }[]>`
+    SELECT to_char(${local(Prisma.sql`s."openedAt"`)}, 'DD/MM/YYYY HH24:MI') || ' – ' ||
+           to_char(${local(Prisma.sql`s."closedAt"`)}, CASE
+             WHEN ${local(Prisma.sql`s."openedAt"`)}::date = ${local(Prisma.sql`s."closedAt"`)}::date THEN 'HH24:MI'
+             ELSE 'DD/MM/YYYY HH24:MI' END) AS shift,
+           uo.name AS "openedBy", uc.name AS "closedBy", s."openingFloat", s."expectedCash",
+           s."countedCash", s.difference, s.notes
+      FROM "CashShift" s
+      JOIN "User" uo ON uo.id = s."openedById"
+      LEFT JOIN "User" uc ON uc.id = s."closedById"
+     WHERE s."closedAt" IS NOT NULL AND ${inRange(Prisma.sql`s."closedAt"`, r)}
+     ORDER BY s."closedAt"`;
+  return rows.map((x) => ({
+    shift: x.shift, openedBy: x.openedBy, closedBy: x.closedBy ?? '', openingFloat: money(x.openingFloat),
+    expectedCash: money(x.expectedCash), countedCash: money(x.countedCash), difference: money(x.difference), notes: x.notes ?? '',
+  }));
+};
+
 // ── Ventas por periodo (día, semana ISO desde lunes, mes) ────
 export interface SalesPeriod { period: string; label: string; tickets: number; sales: number; cost: number; grossMargin: number }
 

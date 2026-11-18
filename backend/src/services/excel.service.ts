@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import type {
   Summary, SalesPeriod, ProductRow, CategoryRow, PaymentMethodRow, EmployeeRow, ExpenseRow, InventoryRow, GroupBy,
-  DeliveryRow,
+  DeliveryRow, CashShiftRow,
 } from './reports.service';
 
 // ── Seguridad: inyección de fórmulas ─────────────────────────
@@ -21,6 +21,7 @@ export interface ReportData {
   employees: EmployeeRow[];
   expenses:  ExpenseRow[];
   deliveries: DeliveryRow[];
+  cashShifts: CashShiftRow[];
   inventory: InventoryRow[];
 }
 
@@ -237,6 +238,22 @@ export const buildReportWorkbook = (d: ReportData): ExcelJS.Workbook => {
     customer: neutralizeFormula(x.customer), phone: neutralizeFormula(x.phone),
     address: neutralizeFormula(x.address), driver: neutralizeFormula(x.driver),
     fee: x.fee, status: DELIVERY_STATUS_LABEL[x.status] ?? x.status, minutes: x.minutes ?? '—',
+  })));
+
+  // ── Cortes de caja (turnos cerrados en el periodo) ──
+  addTableSheet(wb, 'Cortes de caja', [
+    { header: 'Turno',      key: 'shift',    width: 30 },
+    { header: 'Abre',       key: 'openedBy', width: 22 },
+    { header: 'Cierra',     key: 'closedBy', width: 22 },
+    { header: 'Fondo',      key: 'float',    width: 14, numFmt: MONEY, total: true },
+    { header: 'Esperado',   key: 'expected', width: 14, numFmt: MONEY, total: true },
+    { header: 'Contado',    key: 'counted',  width: 14, numFmt: MONEY, total: true },
+    { header: 'Diferencia', key: 'diff',     width: 14, numFmt: MONEY, total: true },
+    { header: 'Notas',      key: 'notes',    width: 40 },
+  ], d.cashShifts.map((x) => ({
+    shift: x.shift, openedBy: neutralizeFormula(x.openedBy), closedBy: neutralizeFormula(x.closedBy),
+    float: x.openingFloat, expected: x.expectedCash, counted: x.countedCash, diff: x.difference,
+    notes: neutralizeFormula(x.notes),
   })));
 
   // ── Inventario (estado actual) ──
