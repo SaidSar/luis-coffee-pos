@@ -14,6 +14,7 @@ import reportRoutes   from './routes/reports.routes';
 import expenseRoutes  from './routes/expenses.routes';
 import deliveryRoutes from './routes/deliveries.routes';
 import cashRoutes     from './routes/cash.routes';
+import dashboardRoutes from './routes/dashboard.routes';
 
 const app = express();
 const httpServer = createServer(app);
@@ -37,6 +38,7 @@ app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/expenses',   expenseRoutes);
 app.use('/api/reports',    reportRoutes);
 app.use('/api/cash',       cashRoutes);
+app.use('/api/dashboard',  dashboardRoutes);
 
 app.get('/health', (_, res) =>
   res.json({ status: 'ok', app: 'Luis Coffee Break POS ☕' })
