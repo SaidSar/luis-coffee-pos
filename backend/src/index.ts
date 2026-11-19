@@ -15,6 +15,7 @@ import expenseRoutes  from './routes/expenses.routes';
 import deliveryRoutes from './routes/deliveries.routes';
 import cashRoutes     from './routes/cash.routes';
 import dashboardRoutes from './routes/dashboard.routes';
+import employeeRoutes from './routes/employees.routes';
 
 const app = express();
 const httpServer = createServer(app);
@@ -34,7 +35,7 @@ app.use('/api/orders',     orderRoutes);
 app.use('/api/tables',     tableRoutes);
 // app.use('/api/payments',   paymentRoutes);
 app.use('/api/deliveries', deliveryRoutes);
-// app.use('/api/employees',  employeeRoutes);
+app.use('/api/employees',  employeeRoutes);
 app.use('/api/expenses',   expenseRoutes);
 app.use('/api/reports',    reportRoutes);
 app.use('/api/cash',       cashRoutes);

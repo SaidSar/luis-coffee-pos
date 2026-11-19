@@ -205,9 +205,10 @@ export const buildReportWorkbook = (d: ReportData): ExcelJS.Workbook => {
     { header: 'Tickets',         key: 'tickets',  width: 10, numFmt: INT,   total: true },
     { header: 'Ventas',          key: 'sales',    width: 16, numFmt: MONEY, total: true },
     { header: 'Ticket promedio', key: 'avg',      width: 16, numFmt: MONEY },
+    { header: 'Nómina pagada',   key: 'payroll',  width: 16, numFmt: MONEY, total: true },
   ], d.employees.map((x) => ({
     employee: neutralizeFormula(x.employee), role: ROLE_LABEL[x.role] ?? x.role,
-    tickets: x.tickets, sales: x.sales, avg: x.averageTicket,
+    tickets: x.tickets, sales: x.sales, avg: x.averageTicket, payroll: x.payroll,
   })));
 
   // ── Gastos ──
@@ -216,10 +217,12 @@ export const buildReportWorkbook = (d: ReportData): ExcelJS.Workbook => {
     { header: 'Descripción',    key: 'description', width: 36 },
     { header: 'Categoría',      key: 'category',    width: 20 },
     { header: 'Registrado por', key: 'user',        width: 24 },
+    { header: 'Empleado',       key: 'employee',    width: 24 },
     { header: 'Monto',          key: 'amount',      width: 16, numFmt: MONEY, total: true },
   ], d.expenses.map((x) => ({
     date: toExcelDate(x.date), description: neutralizeFormula(x.description),
-    category: neutralizeFormula(x.category), user: neutralizeFormula(x.user), amount: x.amount,
+    category: neutralizeFormula(x.category), user: neutralizeFormula(x.user),
+    employee: neutralizeFormula(x.employee), amount: x.amount,
   })));
 
   // ── Entregas a domicilio ──

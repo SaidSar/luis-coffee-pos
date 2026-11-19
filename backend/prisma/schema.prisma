@@ -63,10 +63,15 @@ model User {
   passwordHash String
   role         Role     @default(CASHIER)
   createdAt    DateTime @default(now())
+  active             Boolean   @default(true)  // false = no puede iniciar sesión (nunca se borra)
+  tokenVersion       Int       @default(0)     // al subir invalida todos los JWT emitidos antes
+  mustChangePassword Boolean   @default(false) // contraseña temporal: obliga a cambiarla al ingresar
+  lastLoginAt        DateTime?
 
   orders     Order[]
   deliveries Delivery[] @relation("EmployeeDeliveries")
-  expenses   Expense[]
+  expenses   Expense[]  @relation("ExpenseCreatedBy")
+  payroll    Expense[]  @relation("ExpenseEmployee")
   splitsCreated OrderSplit[] @relation("SplitCreatedBy")
   shiftsOpened CashShift[] @relation("ShiftOpenedBy")
   shiftsClosed CashShift[] @relation("ShiftClosedBy")
@@ -225,8 +230,12 @@ model Expense {
   notes       String?
   paidFromCash Boolean @default(false) // salió del efectivo de la caja (resta en el corte)
   createdAt   DateTime @default(now()) // instante de registro: ubica el gasto dentro de un turno de caja
+  employeeId  String?  // nómina: empleado al que se pagó (sin cascada: los usuarios nunca se borran)
 
-  user User @relation(fields: [userId], references: [id])
+  user     User  @relation("ExpenseCreatedBy", fields: [userId], references: [id])
+  employee User? @relation("ExpenseEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId])
 }
 // Turno de caja. Solo puede haber uno abierto (closedAt null); se garantiza en la API con un candado.
 // Al cerrar se congela expectedCash (fondo + ventas en efectivo − gastos de caja del turno) y la diferencia.

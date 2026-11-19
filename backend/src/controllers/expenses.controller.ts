@@ -12,7 +12,7 @@ const MAX_AMOUNT = 1_000_000;
 
 // ── Schemas ──────────────────────────────────────────────────
 // Monto: número o texto, > 0, máximo 2 decimales y tope de 1,000,000
-const amount = z
+export const amount = z
   .union([z.number(), z.string().trim()])
   .refine((v) => /^\d+(\.\d{1,2})?$/.test(String(v)), { message: 'Monto inválido (número con máximo 2 decimales)' })
   .transform((v) => new Prisma.Decimal(String(v)))
@@ -20,9 +20,9 @@ const amount = z
   .refine((d) => d.lte(MAX_AMOUNT), { message: `El monto máximo es ${MAX_AMOUNT.toLocaleString('es-MX')}` });
 
 // Fecha del gasto (día de negocio en Mazatlán): no más de 1 día en el futuro
-const expenseDate = ymd.refine((d) => d <= addDays(todayMazatlan(), 1), { message: 'La fecha no puede ser futura' });
+export const expenseDate = ymd.refine((d) => d <= addDays(todayMazatlan(), 1), { message: 'La fecha no puede ser futura' });
 
-const notes = z.string().trim().max(500, { message: 'Máximo 500 caracteres' })
+export const notes = z.string().trim().max(500, { message: 'Máximo 500 caracteres' })
   .transform((s) => (s === '' ? null : s))
   .nullable();
 
@@ -76,11 +76,13 @@ export const listExpenses = async (req: Request, res: Response) => {
     const items = await prisma.$queryRaw<{
       id: string; date: string; description: string; category: string; notes: string | null;
       amount: Prisma.Decimal; paidFromCash: boolean; userId: string; userName: string;
+      employeeId: string | null; employeeName: string | null;
     }[]>`
       SELECT e.id, to_char(${local(Prisma.sql`e."expenseDate"`)}, 'YYYY-MM-DD') AS date,
              e.description, e.category, e.notes, e.amount, e."paidFromCash",
-             u.id AS "userId", u.name AS "userName"
+             u.id AS "userId", u.name AS "userName", emp.id AS "employeeId", emp.name AS "employeeName"
         FROM "Expense" e JOIN "User" u ON u.id = e."userId"
+        LEFT JOIN "User" emp ON emp.id = e."employeeId"
         ${where}
        ORDER BY e."expenseDate" DESC, e.id
        LIMIT ${q.limit} OFFSET ${q.offset}`;
@@ -94,6 +96,7 @@ export const listExpenses = async (req: Request, res: Response) => {
         id: x.id, date: x.date, description: x.description, category: x.category, notes: x.notes,
         paidFromCash: x.paidFromCash,
         amount: Number(x.amount), user: { id: x.userId, name: x.userName },
+        employee: x.employeeId ? { id: x.employeeId, name: x.employeeName } : null,
       })),
       count:  agg.count,
       total:  Number(agg.total),
