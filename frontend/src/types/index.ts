@@ -6,11 +6,15 @@ export interface User {
   email:     string;
   role:      Role;
   createdAt: string;
+  active?:             boolean;
+  mustChangePassword?: boolean; // contraseña temporal: debe cambiarla antes de usar el sistema
+  lastLoginAt?:        string | null;
 }
 
 export interface AuthResponse {
   user:  User;
   token: string;
+  mustChangePassword?: boolean;
 }
 
 

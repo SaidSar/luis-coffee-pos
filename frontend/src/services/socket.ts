@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import { useRealtimeStore, type ConnectionStatus } from '../stores/realtimeStore';
+import api from './api';
 
 // Cliente Socket.io único para toda la app (singleton).
 // - autoConnect: false → solo se conecta con sesión iniciada (connectSocket / disconnectSocket).
@@ -13,6 +14,15 @@ let currentToken: string | null = null;
 
 const setStatus = (status: ConnectionStatus) => {
   if (useRealtimeStore.getState().status !== status) useRealtimeStore.getState().setStatus(status);
+};
+
+// El servidor cerró el socket o rechazó el handshake: puede ser que la cuenta se desactivó, cambió de rol o
+// se restableció su contraseña. Se consulta /auth/me: si la sesión ya no vale, el 401 cierra la sesión al
+// instante (interceptor); si sigue válida y se pide, se reconecta con el token vigente.
+const verifySession = (s: Socket, reconnectIfValid: boolean) => {
+  api.get('/auth/me')
+    .then(() => { if (reconnectIfValid && currentToken && !s.connected && !s.active) s.connect(); })
+    .catch(() => { /* el interceptor ya gestionó 401/403 */ });
 };
 
 const createSocket = () => {
@@ -29,8 +39,10 @@ const createSocket = () => {
 
   s.on('disconnect', (reason) => {
     // Desconexión pedida por el cliente (logout) → idle; el resto se reintenta solo
-    if (reason === 'io client disconnect') setStatus('idle');
-    else setStatus('reconnecting');
+    if (reason === 'io client disconnect') { setStatus('idle'); return; }
+    setStatus('reconnecting');
+    // El cliente no reintenta solo tras un cierre del servidor: se verifica la sesión
+    if (reason === 'io server disconnect') verifySession(s, true);
   });
 
   s.on('connect_error', (err) => {
@@ -38,6 +50,7 @@ const createSocket = () => {
       // Token inválido o expirado: no insistir. Se reconecta cuando cambie el token.
       s.disconnect();
       setStatus('offline');
+      verifySession(s, false); // sin reconectar aquí (evita un bucle si el handshake vuelve a rechazarse)
       return;
     }
     // Servidor caído o red: queda "Sin conexión" mientras el manager sigue reintentando

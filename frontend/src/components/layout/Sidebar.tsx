@@ -2,11 +2,12 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingCart, Package,
   Users, Truck, FileSpreadsheet, Wallet, Banknote,
-  Coffee, LogOut, X,
+  Coffee, LogOut, X, KeyRound,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useLogout } from '../../hooks/useAuth';
 import type { Role } from '../../types';
+import { ROLE_ES } from '../employees/employeeUi';
 
 interface NavItem {
   label: string;
@@ -80,7 +81,7 @@ export default function Sidebar({ isOpen, onClose }: Props) {
             to={item.path}
             onClick={onClose}
             className={({ isActive }) => `
-              flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
+              flex items-center gap-3 min-h-11 px-3 py-2.5 rounded-xl text-sm font-medium
               transition-colors ${focusOnDark}
               ${isActive
                 ? 'bg-caramel text-espresso'
@@ -104,18 +105,29 @@ export default function Sidebar({ isOpen, onClose }: Props) {
           </div>
           <div className="overflow-hidden">
             <p className="text-white text-sm font-medium truncate">{user?.name}</p>
-            <p className="text-white/60 text-xs">{user?.role}</p>
+            <p className="text-white/60 text-xs">{user?.role ? ROLE_ES[user.role] ?? user.role : ''}</p>
           </div>
         </div>
+        <NavLink
+          to="/change-password"
+          onClick={onClose}
+          className={({ isActive }) => `
+            w-full min-h-11 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${focusOnDark}
+            ${isActive ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white/90 hover:bg-white/10'}
+          `}
+        >
+          <KeyRound size={14} aria-hidden="true" />
+          Cambiar contraseña
+        </NavLink>
         <button
           onClick={logout}
           className={`
-            w-full flex items-center gap-2 px-3 py-2
+            w-full min-h-11 flex items-center gap-2 px-3 py-2
             text-white/60 hover:text-white/90 hover:bg-white/10
             rounded-lg text-xs font-medium transition-colors ${focusOnDark}
           `}
         >
-          <LogOut size={14} />
+          <LogOut size={14} aria-hidden="true" />
           Cerrar sesión
         </button>
       </div>

@@ -13,9 +13,10 @@ export function useLogin() {
     mutationFn: (data: { email: string; password: string }) =>
       api.post<AuthResponse>('/auth/login', data).then(r => r.data),
 
-    onSuccess: ({ user, token }) => {
-      setAuth(user, token);
-      navigate('/dashboard', { replace: true });
+    onSuccess: ({ user, token, mustChangePassword }) => {
+      setAuth({ ...user, mustChangePassword: mustChangePassword ?? user.mustChangePassword }, token);
+      // Contraseña temporal: primero hay que cambiarla
+      navigate(mustChangePassword ? '/change-password' : '/dashboard', { replace: true });
     },
   });
 }
