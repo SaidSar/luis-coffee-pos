@@ -92,3 +92,22 @@ export const describeApiError = (err: unknown, ctx: ErrorContext): ApiErrorInfo 
 
   return { status, message, products };
 };
+
+// Empleados: mensajes por status y por el código que manda el servidor en details.code (nunca el texto crudo)
+const EMPLOYEE_409: Record<string, string> = {
+  SELF_ACTION:  'No puedes hacer esto sobre tu propia cuenta (desactivarte, cambiar tu rol o restablecer tu contraseña).',
+  LAST_ADMIN:   'Debe quedar al menos un administrador activo.',
+  OPEN_SHIFT:   'Tiene un turno de caja abierto: ciérralo antes de desactivarlo.',
+  EMAIL_TAKEN:  'Ya existe un empleado con ese correo.',
+};
+export const describeEmployeeError = (err: unknown): string => {
+  if (!isAxiosError(err)) return 'Ocurrió un error inesperado. Intenta de nuevo.';
+  if (!err.response) return 'Sin conexión con el servidor. Revisa tu red e intenta de nuevo.';
+  const { status, data } = err.response;
+  const code = (data as { details?: { code?: string } } | undefined)?.details?.code;
+  if (status === 409) return (code && EMPLOYEE_409[code]) || 'El empleado cambió en otra sesión. Se actualizó la lista.';
+  if (status === 400) return 'Revisa los campos marcados e intenta de nuevo.';
+  if (status === 403) return 'Solo un administrador puede gestionar a los empleados.';
+  if (status === 404) return 'Este empleado ya no existe. Se actualizó la lista.';
+  return 'No se pudo completar la acción. Intenta de nuevo.';
+};

@@ -236,34 +236,44 @@ export const byPaymentMethod = async (r: ReportRange): Promise<PaymentMethodRow[
   return rows.map((x) => ({ method: x.method, tickets: x.tickets, sales: money(x.sales) }));
 };
 
-// ── Por empleado (quien tomó la orden) ───────────────────────
-export interface EmployeeRow { userId: string; employee: string; role: string; tickets: number; sales: number; averageTicket: number }
+// ── Por empleado: quien tomó la orden y la nómina pagada en el periodo ──
+// Incluye a quien tenga ventas o nómina en el periodo.
+export interface EmployeeRow { userId: string; employee: string; role: string; tickets: number; sales: number; averageTicket: number; payroll: number }
 
 export const byEmployee = async (r: ReportRange): Promise<EmployeeRow[]> => {
-  const rows = await prisma.$queryRaw<{ userId: string; employee: string; role: string; tickets: number; sales: Prisma.Decimal }[]>`
-    WITH paid AS (${paidOrders(r)})
+  const rows = await prisma.$queryRaw<{ userId: string; employee: string; role: string; tickets: number; sales: Prisma.Decimal; payroll: Prisma.Decimal }[]>`
+    WITH paid AS (${paidOrders(r)}),
+    s AS (SELECT paid."userId", COUNT(*)::int AS tickets, SUM(paid.amount) AS sales FROM paid GROUP BY paid."userId"),
+    n AS (SELECT e."employeeId" AS "userId", SUM(e.amount) AS payroll FROM "Expense" e
+           WHERE e.category = 'NOMINA' AND e."employeeId" IS NOT NULL AND ${inRange(Prisma.sql`e."expenseDate"`, r)}
+           GROUP BY e."employeeId")
     SELECT u.id AS "userId", u.name AS employee, u.role::text AS role,
-           COUNT(*)::int AS tickets, SUM(paid.amount)::numeric(14,2) AS sales
-      FROM paid JOIN "User" u ON u.id = paid."userId"
-     GROUP BY u.id, u.name, u.role
+           COALESCE(s.tickets, 0)::int AS tickets, COALESCE(s.sales, 0)::numeric(14,2) AS sales,
+           COALESCE(n.payroll, 0)::numeric(14,2) AS payroll
+      FROM "User" u
+      LEFT JOIN s ON s."userId" = u.id
+      LEFT JOIN n ON n."userId" = u.id
+     WHERE s."userId" IS NOT NULL OR n."userId" IS NOT NULL
      ORDER BY sales DESC, u.name`;
   return rows.map((x) => {
     const sales = money(x.sales);
-    return { userId: x.userId, employee: x.employee, role: x.role, tickets: x.tickets, sales, averageTicket: x.tickets ? money(sales / x.tickets) : 0 };
+    return { userId: x.userId, employee: x.employee, role: x.role, tickets: x.tickets, sales,
+      averageTicket: x.tickets ? money(sales / x.tickets) : 0, payroll: money(x.payroll) };
   });
 };
 
 // ── Gastos del periodo ───────────────────────────────────────
-export interface ExpenseRow { date: string; description: string; category: string; user: string; amount: number }
+export interface ExpenseRow { date: string; description: string; category: string; user: string; employee: string; amount: number }
 
 export const expenses = async (r: ReportRange): Promise<ExpenseRow[]> => {
-  const rows = await prisma.$queryRaw<{ date: string; description: string; category: string; user: string; amount: Prisma.Decimal }[]>`
+  const rows = await prisma.$queryRaw<{ date: string; description: string; category: string; user: string; employee: string | null; amount: Prisma.Decimal }[]>`
     SELECT to_char(${local(Prisma.sql`e."expenseDate"`)}, 'YYYY-MM-DD') AS date,
-           e.description, e.category, u.name AS "user", e.amount::numeric(14,2) AS amount
+           e.description, e.category, u.name AS "user", emp.name AS employee, e.amount::numeric(14,2) AS amount
       FROM "Expense" e JOIN "User" u ON u.id = e."userId"
+      LEFT JOIN "User" emp ON emp.id = e."employeeId"
      WHERE ${inRange(Prisma.sql`e."expenseDate"`, r)}
      ORDER BY e."expenseDate", e.description`;
-  return rows.map((x) => ({ ...x, amount: money(x.amount) }));
+  return rows.map((x) => ({ ...x, employee: x.employee ?? '', amount: money(x.amount) }));
 };
 
 // ── Inventario (estado actual, no depende del rango) ─────────

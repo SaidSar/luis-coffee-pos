@@ -1,10 +1,22 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { isAxiosError } from 'axios';
 import { useLogin } from '../hooks/useAuth';
+
+// Mensaje por status (nunca el texto crudo del error)
+const loginError = (err: unknown) => {
+  if (!isAxiosError(err) || !err.response) return 'Sin conexión con el servidor. Revisa tu red e intenta de nuevo.';
+  if (err.response.status === 403) return 'Tu cuenta está desactivada. Pide a un administrador que la active.';
+  if (err.response.status === 401 || err.response.status === 400) return 'Correo o contraseña incorrectos';
+  return 'No se pudo iniciar sesión. Intenta de nuevo.';
+};
 
 export default function Login() {
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const login = useLogin();
+  const [params] = useSearchParams();
+  const sessionEnded = params.get('motivo') === 'sesion';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +39,11 @@ export default function Login() {
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-caramel/10 p-8">
           <h2 className="text-lg font-semibold text-espresso mb-6">Iniciar sesión</h2>
+          {sessionEnded && !login.isError && (
+            <p role="status" className="text-sm text-espresso bg-cream rounded-lg px-3 py-2 mb-4">
+              Tu sesión terminó (expiró o un administrador cambió tu cuenta). Vuelve a iniciar sesión.
+            </p>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -76,7 +93,7 @@ export default function Login() {
             {/* Error */}
             {login.isError && (
               <p role="alert" className="text-red-700 text-sm text-center bg-red-50 rounded-lg py-2">
-                Correo o contraseña incorrectos
+                {loginError(login.error)}
               </p>
             )}
 

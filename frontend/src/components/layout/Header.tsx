@@ -13,6 +13,7 @@ const pageTitles: Record<string, string> = {
   '/expenses':   'Gastos',
   '/reports':    'Reportes',
   '/cash':       'Caja',
+  '/change-password': 'Cambiar contraseña',
 };
 
 const roleLabels: Record<string, string> = {
@@ -29,7 +30,7 @@ interface Props {
 export default function Header({ onMenuClick }: Props) {
   const location = useLocation();
   const user     = useAuthStore(s => s.user);
-  const title    = pageTitles[location.pathname] ?? 'Dashboard';
+  const title    = pageTitles[location.pathname] ?? (location.pathname.startsWith('/employees/') ? 'Empleado' : 'Dashboard');
 
   return (
     <header className="
